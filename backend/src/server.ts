@@ -7,6 +7,8 @@ dotenv.config();
 import { connectDB } from "./config/db";
 import "./config/firebase"; // initializes firebase-admin on import
 import authRoutes from "./routes/authRoutes";
+import moduleRoutes from "./routes/moduleRoutes";
+import signalWatcherRoutes from "./routes/signalWatcher";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,14 +21,8 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
-
-// Module routers get mounted here as each teammate builds their layer, e.g.:
-// app.use("/api/gria", griaRoutes);
-// app.use("/api/dsm", dsmRoutes);
-// app.use("/api/apo", apoRoutes);
-// app.use("/api/sroa", sroaRoutes);
-// app.use("/api/scdt", scdtRoutes);
-// app.use("/api/tfm", tfmRoutes);
+app.use("/api/modules", moduleRoutes);
+app.use("/api", signalWatcherRoutes);
 
 connectDB().then(() => {
   app.listen(PORT, () => {
