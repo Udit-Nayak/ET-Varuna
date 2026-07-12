@@ -1,3 +1,11 @@
 node_modules/
 dist/
 .env
+ai_models/
+src/agents/gria/ai_models/
+# Python
+.venv/
+__pycache__/
+
+# GGUF models
+*.gguf

@@ -1,11 +1,10 @@
 import mongoose from "mongoose";
 
 export const connectDB = async (): Promise<void> => {
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
   if (!uri) {
-    console.error("MONGO_URI is not set in .env — skipping DB connection.");
-    return;
+    throw new Error("MONGODB_URI is not set in .env");
   }
 
   try {
@@ -13,5 +12,7 @@ export const connectDB = async (): Promise<void> => {
     console.log("MongoDB connected");
   } catch (err) {
     console.error("MongoDB connection failed:", err);
+    throw err;
   }
 };
+
