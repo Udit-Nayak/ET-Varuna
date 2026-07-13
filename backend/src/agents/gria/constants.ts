@@ -103,6 +103,202 @@ export const GRIA_KEYWORDS = [
   ...NEWS_FILTER_KEYWORDS,
 ];
 
+export const TRUSTED_DOMAINS = [
+  "reuters.com",
+  "apnews.com",
+  "bbc.com",
+  "aljazeera.com",
+  "mea.gov.in",
+  "pib.gov.in",
+  "mopng.gov.in",
+  "rbi.org.in",
+  "opec.org",
+  "iea.org",
+  "imf.org",
+  "worldbank.org",
+  "bloomberg.com",
+  "ft.com",
+  "maritime-executive.com",
+  "marinelink.com",
+  "lloydslist.maritimeintelligence.informa.com",
+  "splash247.com",
+] as const;
+
+export const ALLOWED_COUNTRIES = [
+  "india",
+  "united states",
+  "china",
+  "russia",
+  "iran",
+  "iraq",
+  "israel",
+  "saudi arabia",
+  "united arab emirates",
+  "qatar",
+  "kuwait",
+  "oman",
+  "yemen",
+  "egypt",
+  "turkey",
+  "ukraine",
+  "pakistan",
+  "japan",
+  "south korea",
+  "singapore",
+  "malaysia",
+  "indonesia",
+] as const;
+
+export const ALLOWED_ORGANIZATIONS = [
+  "reuters",
+  "ap news",
+  "bbc",
+  "al jazeera",
+  "ministry of external affairs",
+  "mea",
+  "pib",
+  "ministry of petroleum",
+  "rbi",
+  "opec",
+  "iea",
+  "imf",
+  "world bank",
+  "bloomberg",
+  "financial times",
+  "maritime executive",
+  "marinelink",
+  "lloyd's list",
+  "splash247",
+] as const;
+
+export const ALLOWED_TRADE_CORRIDORS = [
+  "Strait of Hormuz",
+  "Suez Canal",
+  "Bab-el-Mandeb",
+  "Malacca Strait",
+  "Panama Canal",
+  "Black Sea",
+  "Red Sea",
+  "South China Sea",
+] as const;
+
+export const TRUSTED_SOURCE_DEFINITIONS = [
+  {
+    id: "reuters-world",
+    name: "Reuters",
+    domain: "reuters.com",
+    categories: ["geopolitics", "economy", "trade", "energy", "shipping"],
+  },
+  {
+    id: "reuters-markets",
+    name: "Reuters Markets",
+    domain: "reuters.com",
+    categories: ["markets", "economy", "trade", "finance"],
+  },
+  {
+    id: "ap-world",
+    name: "AP News",
+    domain: "apnews.com",
+    categories: ["geopolitics", "conflict", "trade"],
+  },
+  {
+    id: "bbc-world",
+    name: "BBC World",
+    domain: "bbc.com",
+    categories: ["geopolitics", "finance", "economy", "trade"],
+  },
+  {
+    id: "aljazeera-world",
+    name: "Al Jazeera",
+    domain: "aljazeera.com",
+    categories: ["geopolitics", "conflict", "maritime"],
+  },
+  {
+    id: "mea-india",
+    name: "MEA India",
+    domain: "mea.gov.in",
+    categories: ["india", "diplomacy", "foreign relations"],
+  },
+  {
+    id: "pib-india",
+    name: "PIB",
+    domain: "pib.gov.in",
+    categories: ["india", "government", "diplomacy"],
+  },
+  {
+    id: "mopng-india",
+    name: "Ministry of Petroleum",
+    domain: "mopng.gov.in",
+    categories: ["india", "oil", "lng", "gas", "energy"],
+  },
+  {
+    id: "rbi",
+    name: "RBI",
+    domain: "rbi.org.in",
+    categories: ["india", "rates", "inflation", "finance"],
+  },
+  {
+    id: "opec",
+    name: "OPEC",
+    domain: "opec.org",
+    categories: ["oil", "energy", "opec", "opec+"],
+  },
+  {
+    id: "iea",
+    name: "IEA",
+    domain: "iea.org",
+    categories: ["energy", "oil", "gas", "lng"],
+  },
+  {
+    id: "imf",
+    name: "IMF",
+    domain: "imf.org",
+    categories: ["finance", "economy", "inflation", "rates"],
+  },
+  {
+    id: "world-bank",
+    name: "World Bank",
+    domain: "worldbank.org",
+    categories: ["finance", "economy", "trade", "development"],
+  },
+  {
+    id: "bloomberg",
+    name: "Bloomberg",
+    domain: "bloomberg.com",
+    categories: ["markets", "finance", "economy", "energy", "trade"],
+  },
+  {
+    id: "ft-markets",
+    name: "Financial Times",
+    domain: "ft.com",
+    categories: ["markets", "finance", "economy", "trade"],
+  },
+  {
+    id: "maritime-executive",
+    name: "Maritime Executive",
+    domain: "maritime-executive.com",
+    categories: ["maritime", "shipping", "ports", "security"],
+  },
+  {
+    id: "marinelink",
+    name: "MarineLink",
+    domain: "marinelink.com",
+    categories: ["maritime", "shipping", "ports"],
+  },
+  {
+    id: "lloyds-list",
+    name: "Lloyd's List",
+    domain: "lloydslist.maritimeintelligence.informa.com",
+    categories: ["maritime", "shipping", "ports"],
+  },
+  {
+    id: "splash247",
+    name: "Splash247",
+    domain: "splash247.com",
+    categories: ["maritime", "shipping", "ports"],
+  },
+] as const;
+
 export const IRRELEVANT_KEYWORDS = [
   "sports",
   "entertainment",
@@ -116,35 +312,3 @@ export const IRRELEVANT_KEYWORDS = [
 export const DEFAULT_LIMIT = 50;
 export const FETCH_TIMEOUT_MS = 10000;
 export const FETCH_RETRY_COUNT = 2;
-
-export const NEWS_SOURCES: NewsSourceConfig[] = [
-  {
-    id: "newsapi-energy",
-    name: "NewsAPI",
-    type: "newsapi",
-    enabled: Boolean(process.env.NEWSAPI_KEY),
-    endpoint: "https://newsapi.org/v2/everything",
-    categories: ["energy", "oil", "shipping", "sanctions", "geopolitics"],
-    headers: {
-      "X-Api-Key": process.env.NEWSAPI_KEY ?? "",
-    },
-    params: {
-      language: "en",
-      sortBy: "publishedAt",
-    },
-  },
-  {
-    id: "gdelt",
-    name: "GDELT",
-    type: "gdelt",
-    enabled: true,
-    endpoint: "https://api.gdeltproject.org/api/v2/doc/doc",
-    categories: ["geopolitics", "international relations", "energy", "shipping"],
-    params: {
-      format: "json",
-      mode: "ArtList",
-      sort: "datedesc",
-      maxrecords: "50",
-    },
-  },
-];

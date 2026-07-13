@@ -7,6 +7,7 @@ import {
   getHistory as getHistoryService,
   getLatestIntelligence as getLatestIntelligenceService,
   getRiskDashboard as getRiskDashboardService,
+  queryVectorKnowledge as queryVectorKnowledgeService,
   runPipeline as runPipelineService,
 } from "./service";
 
@@ -30,6 +31,15 @@ export const fetchLatestNews = async (req: Request, res: Response): Promise<void
     res.status(200).json(result);
   } catch (error) {
     handleError(res, error, "Failed to fetch latest news");
+  }
+};
+
+export const queryVectorKnowledge = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await queryVectorKnowledgeService(req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    handleError(res, error, "Failed to query vector knowledge");
   }
 };
 

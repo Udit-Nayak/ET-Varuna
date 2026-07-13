@@ -40,8 +40,12 @@ def generate(prompt: str) -> str:
     return response["choices"][0]["text"].strip()
 
 
-def generate_from_article(article: Mapping[str, Any]) -> str:
+def generate_json_from_article(article: Mapping[str, Any]) -> str:
     return generate(build_prompt(article))
+
+
+def generate_from_article(article: Mapping[str, Any]) -> str:
+    return generate_json_from_article(article)
 
 
 def main() -> None:

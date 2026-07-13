@@ -1,4 +1,4 @@
-import { GRIA_KEYWORDS, IRRELEVANT_KEYWORDS } from "./constants";
+import { ALLOWED_COUNTRIES, ALLOWED_ORGANIZATIONS, ALLOWED_TRADE_CORRIDORS, GRIA_KEYWORDS, IRRELEVANT_KEYWORDS, TRUSTED_DOMAINS } from "./constants";
 import { NewsArticle, PreprocessResult } from "./type";
 
 const stripHtml = (value: string): string =>
@@ -22,6 +22,25 @@ const normalizeDate = (value: string | undefined): string => {
 
 const normalizeSource = (value: string): string => normalizeWhitespace(value).toLowerCase();
 
+const normalizeUrl = (value: string): string => {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
+const matchesAllowList = (article: NewsArticle): boolean => {
+  const text = `${article.title} ${article.description} ${article.content} ${article.source}`.toLowerCase();
+  const host = normalizeUrl(article.url);
+  const trustedDomain = Boolean(host) && TRUSTED_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  const countryHit = ALLOWED_COUNTRIES.some((country) => text.includes(country));
+  const organizationHit = ALLOWED_ORGANIZATIONS.some((organization) => text.includes(organization));
+  const corridorHit = ALLOWED_TRADE_CORRIDORS.some((corridor) => text.includes(corridor.toLowerCase()));
+  const keywordHit = GRIA_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()));
+  return Boolean(trustedDomain && (countryHit || organizationHit || corridorHit || keywordHit));
+};
+
 const similarity = (left: string, right: string): number => {
   const a = new Set(left.toLowerCase().split(/\W+/).filter(Boolean));
   const b = new Set(right.toLowerCase().split(/\W+/).filter(Boolean));
@@ -34,7 +53,7 @@ const isRelevant = (article: NewsArticle): boolean => {
   const text = `${article.title} ${article.description} ${article.content}`.toLowerCase();
   const positiveHit = GRIA_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()));
   const negativeHit = IRRELEVANT_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()));
-  return positiveHit && !negativeHit;
+  return matchesAllowList(article) && positiveHit && !negativeHit;
 };
 
 const isDuplicate = (candidate: NewsArticle, existing: NewsArticle[]): boolean => {
@@ -100,4 +119,3 @@ export function preprocessArticles(articles: NewsArticle[]): PreprocessResult {
     },
   };
 }
-

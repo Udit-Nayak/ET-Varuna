@@ -1,9 +1,8 @@
-import cron, { ScheduledTask } from "node-cron";
 import { runPipeline } from "./service";
 
-const SCHEDULE = "*/5 * * * *";
+const SCHEDULE_MS = 35 * 60 * 1000;
 
-let schedulerInstance: ScheduledTask | null = null;
+let schedulerInstance: NodeJS.Timeout | null = null;
 let running = false;
 
 const log = (message: string, error?: unknown): void => {
@@ -14,12 +13,12 @@ const log = (message: string, error?: unknown): void => {
   console.log(`[GRIA Scheduler] ${message}`);
 };
 
-export function startGriaScheduler(): ScheduledTask {
+export function startGriaScheduler(): NodeJS.Timeout {
   if (schedulerInstance) {
     return schedulerInstance;
   }
 
-  schedulerInstance = cron.schedule(SCHEDULE, async () => {
+  const tick = async (): Promise<void> => {
     if (running) {
       log("Previous run still in progress, skipping this tick");
       return;
@@ -35,14 +34,21 @@ export function startGriaScheduler(): ScheduledTask {
     } finally {
       running = false;
     }
-  });
+  };
+
+  void tick();
+  schedulerInstance = setInterval(() => {
+    void tick();
+  }, SCHEDULE_MS);
 
   log("Scheduler started");
   return schedulerInstance;
 }
 
 export function stopGriaScheduler(): void {
-  schedulerInstance?.stop();
+  if (schedulerInstance) {
+    clearInterval(schedulerInstance);
+  }
   schedulerInstance = null;
   running = false;
   log("Scheduler stopped");
@@ -51,4 +57,3 @@ export function stopGriaScheduler(): void {
 export function isGriaSchedulerRunning(): boolean {
   return Boolean(schedulerInstance);
 }
-

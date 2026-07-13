@@ -32,6 +32,7 @@ const IntelligenceSchema = new Schema<IntelligenceMongooseDocument>(
       index: true,
     },
     metadata: { type: Schema.Types.Mixed, default: {} },
+    fetchedAt: { type: Date, required: true, index: true },
     publishedAt: { type: Date, required: true, index: true },
   },
   { timestamps: true, strict: true }
@@ -39,7 +40,7 @@ const IntelligenceSchema = new Schema<IntelligenceMongooseDocument>(
 
 IntelligenceSchema.index({ riskScore: -1, publishedAt: -1 });
 IntelligenceSchema.index({ corridor: 1, country: 1, eventType: 1, severity: 1, source: 1 });
-IntelligenceSchema.set("collection", "griaintelligences");
+IntelligenceSchema.set("collection", "griaIntelligence");
 
 export const IntelligenceModel: Model<IntelligenceMongooseDocument> =
   mongoose.models.GriaIntelligence ?? mongoose.model<IntelligenceMongooseDocument>("GriaIntelligence", IntelligenceSchema);

@@ -15,4 +15,4 @@ export const connectDB = async (): Promise<void> => {
     throw err;
   }
 };
-
+export const db = () => mongoose.connection.db;

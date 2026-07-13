@@ -29,6 +29,7 @@ export interface IntelligenceDocument {
   llmModel: string;
   processingStatus: IntelligenceProcessingStatus;
   metadata: Record<string, unknown>;
+  fetchedAt: Date;
   publishedAt: Date;
 }
 
@@ -70,4 +71,3 @@ export interface NewsSourceMongooseDocument extends NewsSourceDocument, Document
   createdAt: Date;
   updatedAt: Date;
 }
-

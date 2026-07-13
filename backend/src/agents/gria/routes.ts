@@ -7,6 +7,7 @@ import {
   getHistory,
   getLatestIntelligence,
   getRiskDashboard,
+  queryVectorKnowledge,
   runPipeline,
 } from "./controller";
 
@@ -15,6 +16,7 @@ const router = Router();
 router.post("/analyze", analyzeNews);
 router.post("/fetch-news", fetchLatestNews);
 router.post("/run", runPipeline);
+router.post("/vector-search", queryVectorKnowledge);
 router.get("/latest", getLatestIntelligence);
 router.get("/history", getHistory);
 router.get("/risk", getRiskDashboard);

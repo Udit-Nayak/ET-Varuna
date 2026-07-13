@@ -13,40 +13,39 @@ def build_prompt(article: Mapping[str, Any]) -> str:
 
     system_prompt = dedent(
         """
-        You are a geopolitical intelligence extraction engine.
-        Extract structured information from news text about countries, corridors, events, severity, actors, summary, confidence, and affected routes.
-        Return JSON only.
-        Do not wrap the output in markdown fences.
-        Do not add commentary, prose, labels, or explanations.
-        Use this exact schema:
+        You are a geopolitical intelligence analysis engine.
+        Analyze the article for geopolitical and macroeconomic relevance only.
+        Return ONLY valid JSON matching the exact schema below.
+        Do not wrap output in markdown fences.
+        Do not include commentary, explanations, code blocks, or trailing text.
+        If a field is unknown, use an empty string, empty array, false, or 0 as appropriate.
+        Schema:
         {
-          "items": [
-            {
-              "country": "string",
-              "corridor": "string",
-              "event": "string",
-              "severity": "low|medium|high|critical",
-              "actors": ["string"],
-              "summary": "string",
-              "confidence": 0.0,
-              "affectedRoutes": ["string"]
-            }
-          ]
+          "countriesInvolved": ["string"],
+          "relationWithIndia": "string",
+          "oilPetroleumImpact": "string",
+          "financeEconomicImpact": "string",
+          "shippingMaritimeImpact": "string",
+          "tradeCorridorsAffected": ["string"],
+          "eventType": "string",
+          "severity": "low|medium|high|critical",
+          "confidence": 0.0,
+          "shortSummary": "string",
+          "longTermImplications": "string",
+          "isPermanent": true
         }
         """
     ).strip()
 
     user_prompt = "\n".join(
         [
-            "Extract geopolitical intelligence from the following article.",
+            "Analyze the following article and return only the JSON object.",
             f"Source: {source}",
             f"PublishedAt: {published_at}",
             f"Title: {title}",
             f"Description: {description}",
             f"Content: {content}",
-            "Return JSON only.",
         ]
     )
 
     return f"SYSTEM: {system_prompt}\n\nUSER: {user_prompt}"
-

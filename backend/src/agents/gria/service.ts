@@ -2,22 +2,25 @@ import { preprocessArticles } from "./preprocessor";
 import { fetchNews } from "./newsFetcher";
 import { parseHuggingFaceOutput } from "./parser";
 import { generateRawOutput } from "./model";
-import { calculateRisk } from "./riskCalculator";
-import { PipelineInput, PipelineResult, NewsArticle, StructuredExtractionResult } from "./type";
-import {
-  deleteById,
-  findByCorridor,
-  findByCountry,
-  findById,
-  getHistory as getRiskHistory,
-  getLatest as getLatestRisk,
-  saveRisk,
-  updateNewsSourceFetchTime,
-  upsertPipelineLogStatus,
-} from "./mongoRepository";
-import { deriveRiskInputs, getHighRiskCount } from "./analysisUtils";
+import { PipelineInput, PipelineResult, NewsArticle, StructuredExtractionResult, AnalysisResult, IntelligenceDocumentV2, VectorDocument } from "./types";
+import { deleteById, findByCorridor, findByCountry, findById, getHistory as getRiskHistory, getLatest as getLatestRisk, saveIntelligence, saveVectorDocument, updateNewsSourceFetchTime, upsertPipelineLogStatus, vectorSearch } from "./mongoRepository";
+import { getHighRiskCount } from "./analysisUtils";
 
-const extractWithHuggingFace = async (article: NewsArticle): Promise<StructuredExtractionResult> => {
+const buildEmbedding = (text: string, dimensions = 384): number[] => {
+  const tokens = text.toLowerCase().replace(/\s+/g, " ").split(/\W+/).filter(Boolean);
+  const vector = new Array<number>(dimensions).fill(0);
+  for (const token of tokens) {
+    let hash = 0;
+    for (let i = 0; i < token.length; i += 1) {
+      hash = (hash * 33 + token.charCodeAt(i)) >>> 0;
+    }
+    vector[hash % dimensions] += 1;
+  }
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return vector.map((value) => Number((value / magnitude).toFixed(6)));
+};
+
+const extractWithGemma = async (article: NewsArticle): Promise<AnalysisResult> => {
   const rawOutput = await generateRawOutput({
     article: {
       title: article.title,
@@ -28,33 +31,120 @@ const extractWithHuggingFace = async (article: NewsArticle): Promise<StructuredE
     },
   });
   const parsed = parseHuggingFaceOutput(rawOutput);
+  const primary = parsed.items[0];
   return {
     rawOutput,
-    parsed: {
-      items: parsed.items,
-      raw: parsed.raw,
-      theme: article.category,
-    },
+    parsedText: typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput),
+    parsed: primary,
   };
 };
 
-const validateExtraction = async (extraction: StructuredExtractionResult): Promise<Record<string, unknown>> => ({
-  ...extraction.parsed,
-  validation: {
-    passed: true,
-    issues: [],
+const toIntelligenceDocument = (article: NewsArticle, analysis: AnalysisResult): IntelligenceDocumentV2 => ({
+  id: article.id,
+  sourceArticleId: article.id,
+  headline: article.title,
+  content: article.content,
+  summary: analysis.parsed.shortSummary || article.description || article.content,
+  countriesInvolved: analysis.parsed.countriesInvolved,
+  relationWithIndia: analysis.parsed.relationWithIndia,
+  oilPetroleumImpact: analysis.parsed.oilPetroleumImpact,
+  financeEconomicImpact: analysis.parsed.financeEconomicImpact,
+  shippingMaritimeImpact: analysis.parsed.shippingMaritimeImpact,
+  tradeCorridorsAffected: analysis.parsed.tradeCorridorsAffected,
+  eventType: analysis.parsed.eventType,
+  severity: analysis.parsed.severity,
+  confidence: analysis.parsed.confidence,
+  longTermImplications: analysis.parsed.longTermImplications,
+  isPermanent: analysis.parsed.isPermanent,
+  keywords: article.keywords,
+  metadata: {
+    source: article.source,
+    publishedAt: article.publishedAt,
+    language: article.language,
+    category: article.category,
+    rawOutput: analysis.rawOutput,
   },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
 });
+
+const toVectorDocument = (article: NewsArticle, analysis: AnalysisResult): VectorDocument => {
+  const content = [
+    article.title,
+    article.description,
+    article.content,
+    analysis.parsed.shortSummary,
+    analysis.parsed.longTermImplications,
+    analysis.parsed.relationWithIndia,
+    analysis.parsed.oilPetroleumImpact,
+    analysis.parsed.financeEconomicImpact,
+    analysis.parsed.shippingMaritimeImpact,
+  ].join(" ");
+
+  return {
+    id: article.id,
+    sourceArticleId: article.id,
+    headline: article.title,
+    content,
+    summary: analysis.parsed.shortSummary || article.description || article.content,
+    embedding: buildEmbedding(content),
+    countriesInvolved: analysis.parsed.countriesInvolved,
+    relationWithIndia: analysis.parsed.relationWithIndia,
+    oilPetroleumImpact: analysis.parsed.oilPetroleumImpact,
+    financeEconomicImpact: analysis.parsed.financeEconomicImpact,
+    shippingMaritimeImpact: analysis.parsed.shippingMaritimeImpact,
+    tradeCorridorsAffected: analysis.parsed.tradeCorridorsAffected,
+    eventType: analysis.parsed.eventType,
+    severity: analysis.parsed.severity,
+    confidence: analysis.parsed.confidence,
+    isPermanent: false,
+    keywords: article.keywords,
+    metadata: {
+      source: article.source,
+      publishedAt: article.publishedAt,
+      language: article.language,
+      category: article.category,
+      rawOutput: analysis.rawOutput,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+const runAnalysis = async (articles: NewsArticle[]): Promise<Array<{ articleId: string; analysis: AnalysisResult; stored: unknown }>> => {
+  const results: Array<{ articleId: string; analysis: AnalysisResult; stored: unknown }> = [];
+  for (const article of articles) {
+    const analysis = await extractWithGemma(article);
+    const document = analysis.parsed.isPermanent ? toIntelligenceDocument(article, analysis) : toVectorDocument(article, analysis);
+    const stored = analysis.parsed.isPermanent ? await saveIntelligence(document as IntelligenceDocumentV2) : await saveVectorDocument(document as VectorDocument);
+    results.push({
+      articleId: article.id,
+      analysis,
+      stored,
+    });
+  }
+  return results;
+};
 
 export async function analyzeNews(payload: unknown): Promise<unknown> {
   const input = (payload ?? {}) as PipelineInput;
   const fetched = await fetchNews(input);
   const preprocessed = preprocessArticles(fetched.articles);
+  const analyses = await runAnalysis(preprocessed.articles);
+  console.log("[GRIA] Analyze run summary", {
+    fetched: fetched.articles.length,
+    filteredOut: fetched.articles.length - preprocessed.articles.length,
+    sentToGemma: preprocessed.articles.length,
+    permanentStored: analyses.filter((item) => Boolean((item.stored as { isPermanent?: boolean } | null)?.isPermanent)).length,
+    vectorStored: analyses.filter((item) => Boolean(item.stored) && !(item.stored as { isPermanent?: boolean } | null)?.isPermanent).length,
+  });
   return {
     fetched: fetched.articles.length,
     preprocessed: preprocessed.articles.length,
     removed: preprocessed.removed,
+    analyzed: analyses.length,
     articles: preprocessed.articles,
+    analyses,
   };
 }
 
@@ -63,96 +153,31 @@ export async function fetchLatestNews(payload: unknown): Promise<unknown> {
   return fetchNews(input);
 }
 
+export async function queryVectorKnowledge(payload: unknown): Promise<unknown> {
+  const input = (payload ?? {}) as PipelineInput;
+  const query = String(input.query ?? "").trim();
+  const limit = Math.max(1, Math.min(20, input.limit ?? 10));
+  if (!query) {
+    throw new Error("query is required");
+  }
+
+  const embedding = buildEmbedding(query);
+  return vectorSearch(embedding, limit);
+}
+
 export async function runPipeline(payload: unknown): Promise<unknown> {
   const input = (payload ?? {}) as PipelineInput;
   const pipelineStart = new Date();
   const fetched = await fetchNews(input);
   const preprocessed = preprocessArticles(fetched.articles);
-  const analyses: Array<{
-    articleId: string;
-    validated: Record<string, unknown>;
-    riskInputs: ReturnType<typeof deriveRiskInputs>;
-    calculatedRisk: ReturnType<typeof calculateRisk>;
-    stored: unknown;
-  }> = [];
-  let failedAnalyses = 0;
-  let successfulAnalyses = 0;
-
-  for (const article of preprocessed.articles) {
-    try {
-      const extraction = await extractWithHuggingFace(article);
-      const validated = await validateExtraction(extraction);
-      const riskInputs = deriveRiskInputs(article);
-      const calculatedRisk = calculateRisk(riskInputs);
-      const parsedItems = validated.items as Array<{ country?: string; affectedRoutes?: string[] }> | undefined;
-      const primaryItem = parsedItems?.[0];
-      console.log("[GRIA][Pipeline] Saving analysis", {
-        articleId: article.id,
-        title: article.title,
-        source: article.source,
-      });
-      const stored = await saveRisk(
-        {
-          country: primaryItem?.country || "unknown",
-          corridor: article.category || "general",
-          event: article.title,
-          summary: article.description || article.content,
-          affectedRoutes: primaryItem?.affectedRoutes ?? article.keywords,
-          sourceArticleIds: [article.id],
-          risk: riskInputs,
-        },
-        {
-          id: "",
-          country: primaryItem?.country || "unknown",
-          corridor: article.category || "general",
-          event: article.title,
-          summary: article.description || article.content,
-          affectedRoutes: primaryItem?.affectedRoutes ?? article.keywords,
-          sourceArticleIds: [article.id],
-          severity: riskInputs.severity,
-          aisDisruption: riskInputs.aisDisruption,
-          oilPriceChange: riskInputs.oilPriceChange,
-          sanctions: riskInputs.sanctions,
-          eventType: riskInputs.eventType,
-          confidence: riskInputs.confidence,
-          score: calculatedRisk.score,
-          level: calculatedRisk.level,
-          breakdown: calculatedRisk.breakdown,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
-      );
-      console.log("[GRIA][Pipeline] Saved analysis", {
-        articleId: article.id,
-        title: article.title,
-      });
-
-      analyses.push({
-        articleId: article.id,
-        validated,
-        riskInputs,
-        calculatedRisk,
-        stored,
-      });
-      successfulAnalyses += 1;
-    } catch (error) {
-      failedAnalyses += 1;
-      console.error("[GRIA][Pipeline] Analysis failed", {
-        articleId: article.id,
-        title: article.title,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      analyses.push({
-        articleId: article.id,
-        validated: {
-          error: error instanceof Error ? error.message : "Unknown article processing error",
-        },
-        riskInputs: deriveRiskInputs(article),
-        calculatedRisk: calculateRisk(deriveRiskInputs(article)),
-        stored: null,
-      });
-    }
-  }
+  const analyses = await runAnalysis(preprocessed.articles);
+  console.log("[GRIA] Pipeline run summary", {
+    fetched: fetched.articles.length,
+    filteredOut: fetched.articles.length - preprocessed.articles.length,
+    sentToGemma: preprocessed.articles.length,
+    permanentStored: analyses.filter((item) => Boolean((item.stored as { isPermanent?: boolean } | null)?.isPermanent)).length,
+    vectorStored: analyses.filter((item) => Boolean(item.stored) && !(item.stored as { isPermanent?: boolean } | null)?.isPermanent).length,
+  });
 
   const executionEnd = new Date();
   await upsertPipelineLogStatus(pipelineStart, {
@@ -161,10 +186,10 @@ export async function runPipeline(payload: unknown): Promise<unknown> {
     articlesFetched: fetched.articles.length,
     articlesProcessed: preprocessed.articles.length,
     duplicatesRemoved: preprocessed.removed.duplicate,
-    successfulAnalyses,
-    failedAnalyses,
+    successfulAnalyses: analyses.filter((item) => Boolean(item.stored)).length,
+    failedAnalyses: 0,
     executionTime: executionEnd.getTime() - pipelineStart.getTime(),
-    status: failedAnalyses > 0 && successfulAnalyses > 0 ? "partial_success" : failedAnalyses > 0 ? "failed" : "success",
+    status: "success",
   });
 
   for (const source of fetched.sourceStats) {
@@ -190,14 +215,17 @@ export async function runPipeline(payload: unknown): Promise<unknown> {
   return result;
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getLatestIntelligence(): Promise<unknown> {
   return getLatestRisk();
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getHistory(): Promise<unknown> {
   return getRiskHistory();
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getRiskDashboard(): Promise<unknown> {
   const articles = await getRiskHistory();
   return {
@@ -206,19 +234,23 @@ export async function getRiskDashboard(): Promise<unknown> {
   };
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getArticleById(id: string): Promise<unknown> {
   return findById(id);
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function deleteArticle(id: string): Promise<unknown> {
   const deleted = await deleteById(id);
   return { deleted };
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getRisksByCorridor(corridor: string): Promise<unknown> {
   return findByCorridor(corridor);
 }
 
+/** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getRisksByCountry(country: string): Promise<unknown> {
   return findByCountry(country);
 }

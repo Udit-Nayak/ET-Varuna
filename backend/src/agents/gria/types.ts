@@ -143,6 +143,27 @@ export interface StructuredExtractionResult {
   parsed: Record<string, unknown>;
 }
 
+export interface GeopoliticalIntelligence {
+  countriesInvolved: string[];
+  relationWithIndia: string;
+  oilPetroleumImpact: string;
+  financeEconomicImpact: string;
+  shippingMaritimeImpact: string;
+  tradeCorridorsAffected: string[];
+  eventType: string;
+  severity: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  shortSummary: string;
+  longTermImplications: string;
+  isPermanent: boolean;
+}
+
+export interface AnalysisResult {
+  rawOutput: unknown;
+  parsedText: string;
+  parsed: GeopoliticalIntelligence;
+}
+
 export interface RiskInputs {
   severity: GeopoliticalExtraction["severity"];
   aisDisruption: number;
@@ -167,19 +188,18 @@ export type PipelineExecutionStatus = "success" | "partial_success" | "failed" |
 export type NewsSourceStatus = "active" | "inactive" | "error";
 export type NewsSourceProviderType = "NewsAPI" | "RSS" | "GDELT" | "Custom";
 
-export interface IntelligenceDocument extends Omit<RiskAnalysis, "id" | "affectedRoutes" | "sourceArticleIds" | "breakdown"> {
+export interface IntelligenceDocument {
   headline: string;
   content: string;
   summary: string;
   source: string;
   sourceUrl: string;
-  publishedAt: string;
-  fetchedAt: string;
   country: string;
   affectedCountries: string[];
   corridor: string;
   affectedCorridors: string[];
   eventType: string;
+  severity: "low" | "medium" | "high" | "critical";
   confidence: number;
   riskScore: number;
   riskLevel: RiskLevel;
@@ -192,6 +212,8 @@ export interface IntelligenceDocument extends Omit<RiskAnalysis, "id" | "affecte
   llmModel: string;
   processingStatus: IntelligenceProcessingStatus;
   metadata: Record<string, unknown>;
+  fetchedAt: string;
+  publishedAt: string;
 }
 
 export interface NewsSourceDocument {
@@ -235,4 +257,50 @@ export interface PipelineResult {
   summary: PipelineSummary;
   data: Record<string, unknown>;
   articles: NewsArticle[];
+}
+
+export interface VectorDocument {
+  id: string;
+  sourceArticleId: string;
+  headline: string;
+  content: string;
+  summary: string;
+  embedding: number[];
+  countriesInvolved: string[];
+  relationWithIndia: string;
+  oilPetroleumImpact: string;
+  financeEconomicImpact: string;
+  shippingMaritimeImpact: string;
+  tradeCorridorsAffected: string[];
+  eventType: string;
+  severity: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  isPermanent: boolean;
+  keywords: string[];
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntelligenceDocumentV2 {
+  id: string;
+  sourceArticleId: string;
+  headline: string;
+  content: string;
+  summary: string;
+  countriesInvolved: string[];
+  relationWithIndia: string;
+  oilPetroleumImpact: string;
+  financeEconomicImpact: string;
+  shippingMaritimeImpact: string;
+  tradeCorridorsAffected: string[];
+  eventType: string;
+  severity: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  longTermImplications: string;
+  isPermanent: boolean;
+  keywords: string[];
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
