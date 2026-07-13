@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import LiveMap from "./pages/LiveMap"; // add this line
 
 function App() {
   return (
@@ -17,6 +18,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          {/* add this block */}
+          <Route
+            path="/live-map"
+            element={
+              <ProtectedRoute>
+                <LiveMap />
               </ProtectedRoute>
             }
           />

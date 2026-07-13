@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import ModuleCard from "../components/ModuleCard";
 import { ModuleMeta } from "../types";
+import { Link } from "react-router-dom"; // add to imports at top
 
 const modules: ModuleMeta[] = [
   {
@@ -67,6 +68,12 @@ const Dashboard = () => {
             <span className="hidden font-mono text-xs text-muted sm:inline">
               {user?.email}
             </span>
+            <Link
+  to="/live-map"
+  className="rounded-md border border-amber/40 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/10"
+>
+  Live Map
+</Link>
             <button
               onClick={handleLogout}
               className="rounded-md border border-border px-4 py-2 font-mono text-xs uppercase tracking-wider text-ink transition-colors hover:border-risk hover:text-risk"

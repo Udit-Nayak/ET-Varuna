@@ -1,14 +1,13 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import http from "http";
 
 dotenv.config();
 
 import { connectDB } from "./config/db";
-import "./config/firebase"; // initializes firebase-admin on import
+import "./config/firebase";
 import authRoutes from "./routes/authRoutes";
-import griaRoutes from "./agents/gria/routes";
-import { bootstrapGria } from "./agents/gria/bootstrap";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,24 +22,11 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/gria", griaRoutes);
 
-// Module routers get mounted here as each teammate builds their layer, e.g.:
-// app.use("/api/gria", griaRoutes);
-// app.use("/api/dsm", dsmRoutes);
-// app.use("/api/apo", apoRoutes);
-// app.use("/api/sroa", sroaRoutes);
-// app.use("/api/scdt", scdtRoutes);
-// app.use("/api/tfm", tfmRoutes);
+const httpServer = http.createServer(app);
+setupVesselSocket(httpServer);
 
-const startServer = async (): Promise<void> => {
-  await connectDB();
-  await bootstrapGria();
-
+connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
-};
-
-startServer().catch((error) => {
-  console.error("Server failed to start:", error);
-  process.exit(1);
 });
