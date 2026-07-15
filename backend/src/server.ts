@@ -7,7 +7,10 @@ dotenv.config();
 
 import { connectDB } from "./config/db";
 import "./config/firebase";
+import griaRoutes from "./agents/gria/routes";
+import dsmRoutes from "./agents/dsm/routes";
 import authRoutes from "./routes/authRoutes";
+import { setupVesselSocket } from "./sockets/vesselSocket";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +24,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/gria", griaRoutes);
+app.use("/api/dsm", dsmRoutes);
 
 const httpServer = http.createServer(app);
 setupVesselSocket(httpServer);
