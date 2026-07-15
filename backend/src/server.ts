@@ -12,6 +12,8 @@ import dsmRoutes from "./agents/dsm/routes";
 import authRoutes from "./routes/authRoutes";
 import { bootstrapGria } from "./agents/gria/bootstrap";
 import nationalStateRoutes from "./agents/shared/nationalStateRoutes";
+import livePriceRoutes from "./agents/shared/livePriceRoutes";
+import { startLivePriceScheduler } from "./agents/shared/livePriceScheduler";
 import { setupVesselSocket } from "./sockets/vesselSocket";
 
 const app = express();
@@ -27,6 +29,7 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/gria", griaRoutes);
 app.use("/api", nationalStateRoutes);
+app.use("/api", livePriceRoutes);
 app.use("/api/dsm", dsmRoutes);
 
 // Module routers get mounted here as each teammate builds their layer, e.g.:
@@ -39,6 +42,7 @@ app.use("/api/dsm", dsmRoutes);
 const startServer = async (): Promise<void> => {
   await connectDB();
   await bootstrapGria();
+  startLivePriceScheduler();
 
   const httpServer = http.createServer(app);
   setupVesselSocket(httpServer);
