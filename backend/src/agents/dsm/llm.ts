@@ -28,7 +28,7 @@ interface DsmLlmReviewResponse {
 const provider = process.env.DSM_LLM_PROVIDER ?? "huggingface";
 const model = process.env.DSM_LLM_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.3";
 
-const llmEnabled = (): boolean => process.env.DSM_LLM_ENABLED === "true";
+const llmEnabled = (): boolean => process.env.DSM_LLM_ENABLED !== "false";
 
 const parseNumber = (value: unknown): number | undefined => {
   const parsed = Number(value);
