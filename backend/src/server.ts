@@ -15,6 +15,7 @@ import nationalStateRoutes from "./agents/shared/nationalStateRoutes";
 import livePriceRoutes from "./agents/shared/livePriceRoutes";
 import { startLivePriceScheduler } from "./agents/shared/livePriceScheduler";
 import { setupVesselSocket } from "./sockets/vesselSocket";
+import { aisStreamService } from "./services/aisStreamService";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -46,9 +47,11 @@ const startServer = async (): Promise<void> => {
 
   const httpServer = http.createServer(app);
   setupVesselSocket(httpServer);
+  aisStreamService.start();
 
   httpServer.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
+    console.log("Socket.io attached");
   });
 };
 
