@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { corridors } from "../data/corridors";
@@ -13,6 +13,70 @@ const facilityColor: Record<FacilityType, string> = {
   spr: "#3FA796",
 };
 
+interface SelectedVesselDetails {
+  mmsi: number;
+  name: string;
+  lat: number;
+  lon: number;
+  sog?: number;
+  cog?: number;
+  heading?: number;
+  type?: number;
+  callSign?: string;
+  destination?: string;
+  imoNumber?: number;
+  draught?: number;
+  isTanker: boolean;
+  lastUpdate: number;
+}
+
+const toNumber = (value: unknown): number | undefined => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+};
+
+const toBoolean = (value: unknown): boolean => value === true || value === "true";
+
+const vesselToDetails = (vessel: Vessel): SelectedVesselDetails => ({
+  mmsi: vessel.mmsi,
+  name: vessel.name || "Unknown vessel",
+  lat: vessel.lat,
+  lon: vessel.lon,
+  sog: vessel.sog,
+  cog: vessel.cog,
+  heading: vessel.heading,
+  type: vessel.type,
+  callSign: vessel.callSign,
+  destination: vessel.destination,
+  imoNumber: vessel.imoNumber,
+  draught: vessel.draught,
+  isTanker: vessel.isTanker,
+  lastUpdate: vessel.lastUpdate,
+});
+
+const formatNumber = (value: unknown, digits = 1, suffix = "") => {
+  const numeric = toNumber(value);
+  return numeric === undefined ? "n/a" : `${numeric.toFixed(digits)}${suffix}`;
+};
+
+const formatLastUpdate = (value: unknown) => {
+  const numeric = toNumber(value);
+  if (numeric === undefined) return "n/a";
+  return new Date(numeric).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
 const vesselsToGeoJSON = (vessels: Vessel[]) => ({
   type: "FeatureCollection" as const,
   features: vessels.map((v) => ({
@@ -20,8 +84,18 @@ const vesselsToGeoJSON = (vessels: Vessel[]) => ({
     properties: {
       mmsi: v.mmsi,
       name: v.name || "Unknown vessel",
-      sog: v.sog ?? 0,
+      lat: v.lat,
+      lon: v.lon,
+      sog: v.sog,
+      cog: v.cog,
+      heading: v.heading,
+      type: v.type,
+      callSign: v.callSign,
+      destination: v.destination,
+      imoNumber: v.imoNumber,
+      draught: v.draught,
       isTanker: v.isTanker,
+      lastUpdate: v.lastUpdate,
       rotation: v.heading !== undefined && v.heading !== 511 ? v.heading : v.cog ?? 0,
     },
     geometry: { type: "Point" as const, coordinates: [v.lon, v.lat] },
@@ -36,6 +110,13 @@ const VesselMap = ({ vessels }: VesselMapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const loadedRef = useRef(false);
+  const [selectedVessel, setSelectedVessel] = useState<SelectedVesselDetails | null>(null);
+  const tankerCount = vessels.reduce((count, vessel) => count + (vessel.isTanker ? 1 : 0), 0);
+  const otherVesselCount = vessels.length - tankerCount;
+  const latestUpdate = useMemo(
+    () => vessels.reduce((latest, vessel) => Math.max(latest, vessel.lastUpdate), 0),
+    [vessels]
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -201,8 +282,38 @@ const VesselMap = ({ vessels }: VesselMapProps) => {
       bindPopup(
         "vessels-symbol",
         (p) =>
-          `<div style="font-family:monospace;font-size:12px;color:#0B0F14"><strong>${p.name}</strong><br/>MMSI ${p.mmsi}<br/>${p.isTanker ? "Tanker" : "Other vessel"}<br/>${p.sog?.toFixed(1)} kn</div>`
+          `<div style="font-family:monospace;font-size:12px;color:#0B0F14;min-width:160px"><strong>${escapeHtml(
+            p.name
+          )}</strong><br/>MMSI ${escapeHtml(p.mmsi)}<br/>${
+            p.isTanker ? "Tanker" : "Other vessel"
+          }<br/>Speed ${formatNumber(p.sog, 1, " kn")}<br/>Course ${formatNumber(
+            p.cog,
+            1,
+            " deg"
+          )}</div>`
       );
+
+      map.on("click", "vessels-symbol", (e) => {
+        const props = e.features?.[0]?.properties;
+        if (!props) return;
+
+        setSelectedVessel({
+          mmsi: Number(props.mmsi),
+          name: String(props.name || "Unknown vessel"),
+          lat: Number(props.lat),
+          lon: Number(props.lon),
+          sog: toNumber(props.sog),
+          cog: toNumber(props.cog),
+          heading: toNumber(props.heading),
+          type: toNumber(props.type),
+          callSign: props.callSign ? String(props.callSign) : undefined,
+          destination: props.destination ? String(props.destination) : undefined,
+          imoNumber: toNumber(props.imoNumber),
+          draught: toNumber(props.draught),
+          isTanker: toBoolean(props.isTanker),
+          lastUpdate: Number(props.lastUpdate),
+        });
+      });
 
       loadedRef.current = true;
     });
@@ -222,9 +333,110 @@ const VesselMap = ({ vessels }: VesselMapProps) => {
     source?.setData(vesselsToGeoJSON(vessels));
   }, [vessels]);
 
+  useEffect(() => {
+    if (!selectedVessel) return;
+    const latestSelected = vessels.find((vessel) => vessel.mmsi === selectedVessel.mmsi);
+    if (!latestSelected) {
+      setSelectedVessel(null);
+      return;
+    }
+    setSelectedVessel(vesselToDetails(latestSelected));
+  }, [selectedVessel?.mmsi, vessels]);
+
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg border border-border">
       <div ref={containerRef} className="h-full w-full" />
+
+      <div className="pointer-events-auto absolute left-3 right-14 top-3 z-10 rounded-md border border-border bg-surface/95 px-3 py-3 font-mono text-[11px] text-muted shadow-lg backdrop-blur sm:left-auto sm:w-72">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold text-ink">AIS Live</div>
+            <div>Last update: {latestUpdate ? formatLastUpdate(latestUpdate) : "waiting"}</div>
+          </div>
+          <span className="mt-1 h-2 w-2 shrink-0 animate-pulseDot rounded-full bg-amber" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
+            <div>Ships</div>
+            <div className="text-lg font-semibold text-ink">{vessels.length}</div>
+          </div>
+          <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
+            <div>Tankers</div>
+            <div className="text-lg font-semibold text-[#5EC9FF]">{tankerCount}</div>
+          </div>
+          <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
+            <div>Other</div>
+            <div className="text-lg font-semibold text-ink">{otherVesselCount}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-border/80 pt-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-ink">Selected Vessel</div>
+            {selectedVessel && (
+              <button
+                type="button"
+                className="rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:border-amber hover:text-amber"
+                onClick={() => setSelectedVessel(null)}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {selectedVessel ? (
+            <div className="space-y-1">
+              <div className="truncate text-sm font-semibold text-ink">{selectedVessel.name}</div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <span>MMSI</span>
+                <span className="text-right text-ink">{selectedVessel.mmsi}</span>
+                <span>Class</span>
+                <span className="text-right text-ink">
+                  {selectedVessel.isTanker ? "Tanker" : "Other vessel"}
+                </span>
+                <span>AIS type</span>
+                <span className="text-right text-ink">{selectedVessel.type ?? "n/a"}</span>
+                <span>Call sign</span>
+                <span className="truncate text-right text-ink">{selectedVessel.callSign || "n/a"}</span>
+                <span>IMO</span>
+                <span className="text-right text-ink">{selectedVessel.imoNumber ?? "n/a"}</span>
+                <span>Destination</span>
+                <span className="truncate text-right text-ink">
+                  {selectedVessel.destination || "n/a"}
+                </span>
+                <span>Speed</span>
+                <span className="text-right text-ink">
+                  {formatNumber(selectedVessel.sog, 1, " kn")}
+                </span>
+                <span>Course</span>
+                <span className="text-right text-ink">
+                  {formatNumber(selectedVessel.cog, 1, " deg")}
+                </span>
+                <span>Heading</span>
+                <span className="text-right text-ink">
+                  {formatNumber(selectedVessel.heading, 0, " deg")}
+                </span>
+                <span>Draught</span>
+                <span className="text-right text-ink">
+                  {formatNumber(selectedVessel.draught, 1, " m")}
+                </span>
+                <span>Lat / lon</span>
+                <span className="text-right text-ink">
+                  {formatNumber(selectedVessel.lat, 3)}, {formatNumber(selectedVessel.lon, 3)}
+                </span>
+                <span>Updated</span>
+                <span className="text-right text-ink">
+                  {formatLastUpdate(selectedVessel.lastUpdate)}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-ink">None</div>
+          )}
+        </div>
+      </div>
+
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-md border border-border bg-surface/90 px-3 py-2 font-mono text-[10px] text-muted backdrop-blur">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: "#D64545" }} />
@@ -243,16 +455,16 @@ const VesselMap = ({ vessels }: VesselMapProps) => {
           Port
         </div>
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: "#5EC9FF" }} />
-          Live tanker ({vessels.length})
+          <span className="h-2 w-2 rounded-full" style={{ background: "#F6F7F9" }} />
+          Live vessels ({vessels.length})
         </div>
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: "#5EC9FF" }} />
-          Tanker
+          Tanker ({tankerCount})
         </div>
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: "#5C6773" }} />
-          Other vessel ({vessels.length})
+          Other vessel ({otherVesselCount})
         </div>
       </div>
     </div>
