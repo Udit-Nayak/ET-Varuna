@@ -9,6 +9,7 @@ import { connectDB } from "./config/db";
 import "./config/firebase";
 import griaRoutes from "./agents/gria/routes";
 import dsmRoutes from "./agents/dsm/routes";
+import sroaRoutes from "./agents/sroa/routes";
 import authRoutes from "./routes/authRoutes";
 import { setupVesselSocket } from "./sockets/vesselSocket";
 
@@ -25,6 +26,7 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/gria", griaRoutes);
 app.use("/api/dsm", dsmRoutes);
+app.use("/api/sroa", sroaRoutes);
 
 const httpServer = http.createServer(app);
 setupVesselSocket(httpServer);

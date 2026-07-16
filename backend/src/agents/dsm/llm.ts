@@ -90,8 +90,12 @@ const invokeLlm = async (prompt: string): Promise<string | null> => {
   if (!llmEnabled()) {
     return null;
   }
-  if (provider === "huggingface") {
-    return invokeHuggingFace(prompt);
+  try {
+    if (provider === "huggingface") {
+      return await invokeHuggingFace(prompt);
+    }
+  } catch (error) {
+    console.warn("DSM LLM unavailable, using deterministic fallback:", error instanceof Error ? error.message : error);
   }
   return null;
 };
