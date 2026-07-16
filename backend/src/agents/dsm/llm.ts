@@ -28,7 +28,7 @@ interface DsmLlmReviewResponse {
 const provider = process.env.DSM_LLM_PROVIDER ?? "huggingface";
 const model = process.env.DSM_LLM_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.3";
 
-const llmEnabled = (): boolean => process.env.DSM_LLM_ENABLED === "true";
+const llmEnabled = (): boolean => process.env.DSM_LLM_ENABLED !== "false";
 
 const parseNumber = (value: unknown): number | undefined => {
   const parsed = Number(value);
@@ -90,8 +90,12 @@ const invokeLlm = async (prompt: string): Promise<string | null> => {
   if (!llmEnabled()) {
     return null;
   }
-  if (provider === "huggingface") {
-    return invokeHuggingFace(prompt);
+  try {
+    if (provider === "huggingface") {
+      return await invokeHuggingFace(prompt);
+    }
+  } catch (error) {
+    console.warn("DSM LLM unavailable, using deterministic fallback:", error instanceof Error ? error.message : error);
   }
   return null;
 };
