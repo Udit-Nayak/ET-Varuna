@@ -20,6 +20,18 @@ export const corridors: Corridor[] = [
     ],
   },
   {
+    id: "persian-gulf-inner",
+    name: "Persian Gulf Inner Route",
+    risk: 71,
+    coordinates: [
+      [48.0, 29.0],
+      [50.0, 28.5],
+      [52.2, 27.8],
+      [54.7, 26.9],
+      [57.0, 26.0],
+    ],
+  },
+  {
     id: "bab-el-mandeb",
     name: "Bab-el-Mandeb",
     risk: 71,
@@ -56,9 +68,13 @@ export const corridors: Corridor[] = [
     name: "Cape of Good Hope (reroute)",
     risk: 9,
     coordinates: [
-      [18.4, -34.35],
-      [16.0, -33.5],
-      [12.0, -28.0],
+      [18.0, -18.0],
+      [14.5, -25.0],
+      [18.0, -34.0],
+      [30.0, -28.0],
+      [45.0, -16.0],
+      [60.0, 0.0],
+      [72.0, 14.0],
     ],
   },
 ];
