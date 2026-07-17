@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import MapboxDraw from "@mapbox/mapbox-gl-draw";
-import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 import maplibregl, { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { corridors } from "../data/corridors";
 import { indiaFacilities, FacilityType } from "../data/indiaPorts";
 import { TensionZone } from "../hooks/useSimulation";
-import { Vessel } from "../hooks/useVesselStream";
+import { Vessel, StreamStatus } from "../hooks/useVesselStream";
 import { bearingBetween, distanceBetween, getPolygonCenter, isHeadingToward } from "../utils/geo";
 
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
@@ -29,6 +27,9 @@ const VESSEL_OTHER_COLOR = "#5C6773";
 const VESSEL_STALE_COLOR = "#8F98A3";
 const VESSEL_AFFECTED_COLOR = "#D64545";
 const VESSEL_APPROACHING_COLOR = "#E8A33D";
+const DRAFT_COLOR = "#E8A33D";
+const CLOSE_VERTEX_PX = 10;
+const DEDUPE_PX = 6;
 
 interface SelectedVesselDetails {
   mmsi: number;
@@ -73,12 +74,12 @@ const vesselToDetails = (vessel: Vessel): SelectedVesselDetails => ({
 
 const formatNumber = (value: unknown, digits = 1, suffix = "") => {
   const numeric = toNumber(value);
-  return numeric === undefined ? "n/a" : `${numeric.toFixed(digits)}${suffix}`;
+  return numeric === undefined ? "—" : `${numeric.toFixed(digits)}${suffix}`;
 };
 
 const formatLastUpdate = (value: unknown) => {
   const numeric = toNumber(value);
-  if (numeric === undefined) return "n/a";
+  if (numeric === undefined) return "—";
   return new Date(numeric).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -137,12 +138,10 @@ const corridorLabelsToGeoJSON = () => ({
 
 const isVesselApproachingZone = (vessel: Vessel, zones: TensionZone[]) => {
   if (vessel.cog === undefined) return false;
-
   return zones.some((zone) => {
     const [zoneLng, zoneLat] = getPolygonCenter(zone.polygon);
     const distanceKm = distanceBetween(vessel.lat, vessel.lon, zoneLat, zoneLng);
     if (distanceKm > 200) return false;
-
     const bearingToZone = bearingBetween(vessel.lat, vessel.lon, zoneLat, zoneLng);
     return isHeadingToward(vessel.cog!, bearingToZone);
   });
@@ -155,33 +154,32 @@ const vesselsToGeoJSON = (
   zones: TensionZone[] = []
 ) => {
   const affectedSet = new Set(affectedVessels);
-
   return {
-  type: "FeatureCollection" as const,
-  features: vessels.map((v) => ({
-    type: "Feature" as const,
-    properties: {
-      mmsi: v.mmsi,
-      name: v.name || "Unknown vessel",
-      lat: v.lat,
-      lon: v.lon,
-      sog: v.sog,
-      cog: v.cog,
-      heading: v.heading,
-      type: v.type,
-      callSign: v.callSign,
-      destination: v.destination,
-      imoNumber: v.imoNumber,
-      draught: v.draught,
-      isTanker: v.isTanker,
-      isAffected: affectedSet.has(v.mmsi),
-      isApproaching: !affectedSet.has(v.mmsi) && isVesselApproachingZone(v, zones),
-      isStale: now - v.lastUpdate > STALE_VESSEL_MS,
-      lastUpdate: v.lastUpdate,
-      rotation: v.heading !== undefined && v.heading !== 511 ? v.heading : v.cog ?? 0,
-    },
-    geometry: { type: "Point" as const, coordinates: [v.lon, v.lat] },
-  })),
+    type: "FeatureCollection" as const,
+    features: vessels.map((v) => ({
+      type: "Feature" as const,
+      properties: {
+        mmsi: v.mmsi,
+        name: v.name || "Unknown vessel",
+        lat: v.lat,
+        lon: v.lon,
+        sog: v.sog,
+        cog: v.cog,
+        heading: v.heading,
+        type: v.type,
+        callSign: v.callSign,
+        destination: v.destination,
+        imoNumber: v.imoNumber,
+        draught: v.draught,
+        isTanker: v.isTanker,
+        isAffected: affectedSet.has(v.mmsi),
+        isApproaching: !affectedSet.has(v.mmsi) && isVesselApproachingZone(v, zones),
+        isStale: now - v.lastUpdate > STALE_VESSEL_MS,
+        lastUpdate: v.lastUpdate,
+        rotation: v.heading !== undefined && v.heading !== 511 ? v.heading : v.cog ?? 0,
+      },
+      geometry: { type: "Point" as const, coordinates: [v.lon, v.lat] },
+    })),
   };
 };
 
@@ -217,22 +215,35 @@ const zonesToGeoJSON = (zones: TensionZone[]) => ({
   })),
 });
 
+const emptyFC = { type: "FeatureCollection" as const, features: [] as any[] };
+
 interface VesselMapProps {
   vessels: Vessel[];
   zones: TensionZone[];
   affectedVessels: number[];
   isDrawing: boolean;
+  status: StreamStatus;
   onZoneDrawn: (coordinates: number[][]) => void;
 }
 
-const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: VesselMapProps) => {
+const statusMeta: Record<StreamStatus, { label: string; dot: string; text: string }> = {
+  connecting: { label: "CONNECTING", dot: "bg-muted", text: "text-muted" },
+  live: { label: "LIVE", dot: "bg-safe", text: "text-safe" },
+  reconnecting: { label: "RECONNECTING", dot: "bg-amber", text: "text-amber" },
+  offline: { label: "OFFLINE", dot: "bg-risk", text: "text-risk" },
+};
+
+const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneDrawn }: VesselMapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const drawRef = useRef<MapboxDraw | null>(null);
   const loadedRef = useRef(false);
+  const draftPointsRef = useRef<[number, number][]>([]);
   const [selectedVessel, setSelectedVessel] = useState<SelectedVesselDetails | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+
   const tankerCount = vessels.reduce((count, vessel) => count + (vessel.isTanker ? 1 : 0), 0);
   const otherVesselCount = vessels.length - tankerCount;
   const latestUpdate = useMemo(
@@ -245,6 +256,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
     return () => window.clearInterval(intervalId);
   }, []);
 
+  // ---- Map init ----
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
@@ -257,15 +269,8 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
 
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl(), "top-right");
-    const draw = new MapboxDraw({
-      displayControlsDefault: false,
-      controls: {},
-    });
-    drawRef.current = draw;
-    map.addControl(draw as unknown as maplibregl.IControl);
 
     map.on("load", () => {
-      // ---- Corridor lines ----
       map.addSource("corridors", {
         type: "geojson",
         data: {
@@ -284,12 +289,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
         source: "corridors",
         paint: {
           "line-width": 10,
-          "line-color": [
-            "case",
-            [">=", ["get", "risk"], 65], "#D64545",
-            [">=", ["get", "risk"], 35], "#E8A33D",
-            "#3FA796",
-          ],
+          "line-color": ["case", [">=", ["get", "risk"], 65], "#D64545", [">=", ["get", "risk"], 35], "#E8A33D", "#3FA796"],
           "line-opacity": 0.15,
           "line-blur": 2,
         },
@@ -300,42 +300,32 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
         type: "line",
         source: "corridors",
         paint: {
-          "line-width": 4,
-          "line-color": [
-            "case",
-            [">=", ["get", "risk"], 65], "#D64545",
-            [">=", ["get", "risk"], 35], "#E8A33D",
-            "#3FA796",
-          ],
-          "line-opacity": 0.85,
+          "line-width": 3,
+          "line-color": ["case", [">=", ["get", "risk"], 65], "#D64545", [">=", ["get", "risk"], 35], "#E8A33D", "#3FA796"],
+          "line-opacity": 0.9,
         },
       });
 
-      map.addSource("corridor-labels", {
-        type: "geojson",
-        data: corridorLabelsToGeoJSON(),
-      });
-
+      map.addSource("corridor-labels", { type: "geojson", data: corridorLabelsToGeoJSON() });
       map.addLayer({
         id: "corridor-labels",
         type: "symbol",
         source: "corridor-labels",
         layout: {
           "text-field": ["get", "label"],
-          "text-size": 11,
+          "text-size": 10.5,
+          "text-font": ["Noto Sans Regular"],
           "text-anchor": "center",
           "text-offset": [0, -1],
           "text-allow-overlap": false,
         },
         paint: {
-          "text-color": "#FFFFFF",
+          "text-color": "#F6F7F9",
           "text-halo-color": "#0B0F14",
-          "text-halo-width": 2,
-          "text-halo-blur": 1,
+          "text-halo-width": 1.4,
         },
       });
 
-      // ---- Facility points ----
       map.addSource("facilities", {
         type: "geojson",
         data: {
@@ -349,37 +339,42 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
       });
 
       map.addLayer({
+        id: "facilities-halo",
+        type: "circle",
+        source: "facilities",
+        paint: {
+          "circle-radius": 10,
+          "circle-color": ["match", ["get", "type"], "refinery", facilityColor.refinery, "spr", facilityColor.spr, facilityColor.port],
+          "circle-opacity": 0.16,
+        },
+      });
+
+      map.addLayer({
         id: "facilities-circle",
         type: "circle",
         source: "facilities",
         paint: {
-          "circle-radius": 6,
-          "circle-color": [
-            "match",
-            ["get", "type"],
-            "refinery", facilityColor.refinery,
-            "spr", facilityColor.spr,
-            facilityColor.port,
-          ],
-          "circle-stroke-width": 2,
+          "circle-radius": 5,
+          "circle-color": ["match", ["get", "type"], "refinery", facilityColor.refinery, "spr", facilityColor.spr, facilityColor.port],
+          "circle-stroke-width": 1.5,
           "circle-stroke-color": "#0B0F14",
         },
       });
 
-      // ---- Vessel triangle icon (drawn on a canvas, registered as a map image) ----
-      // ---- Vessel triangle icons: blue for tankers, gray for everything else ----
       const makeTriangle = (color: string) => {
-        const size = 20;
+        const size = 22;
         const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext("2d")!;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.moveTo(size / 2, 0);
-        ctx.lineTo(size, size);
-        ctx.lineTo(size / 2, size * 0.72);
-        ctx.lineTo(0, size);
+        ctx.moveTo(size / 2, 1);
+        ctx.lineTo(size - 1, size - 1);
+        ctx.lineTo(size / 2, size * 0.7);
+        ctx.lineTo(1, size - 1);
         ctx.closePath();
         ctx.fill();
         return ctx.getImageData(0, 0, size, size);
@@ -390,16 +385,8 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
       map.addImage("vessel-affected", makeTriangle(VESSEL_AFFECTED_COLOR));
       map.addImage("vessel-approaching", makeTriangle(VESSEL_APPROACHING_COLOR));
 
-      // ---- Vessel source + layer ----
-      map.addSource("vessels", {
-        type: "geojson",
-        data: vesselsToGeoJSON([]),
-      });
-
-      map.addSource("affected-vessels", {
-        type: "geojson",
-        data: vesselsToGeoJSON([]),
-      });
+      map.addSource("vessels", { type: "geojson", data: vesselsToGeoJSON([]) });
+      map.addSource("affected-vessels", { type: "geojson", data: vesselsToGeoJSON([]) });
 
       map.addLayer({
         id: "vessels-affected",
@@ -428,18 +415,48 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
             ["get", "isTanker"], "vessel-tanker",
             "vessel-other",
           ],
-          "icon-size": 0.9,
+          "icon-size": 0.85,
           "icon-rotate": ["get", "rotation"],
           "icon-rotation-alignment": "map",
           "icon-allow-overlap": true,
         },
       });
 
+      // ---- Draft polygon (custom draw, replaces mapbox-gl-draw) ----
+      map.addSource("draft-zone-fill", { type: "geojson", data: emptyFC });
+      map.addSource("draft-zone-line", { type: "geojson", data: emptyFC });
+      map.addSource("draft-zone-points", { type: "geojson", data: emptyFC });
+
+      map.addLayer({
+        id: "draft-zone-fill",
+        type: "fill",
+        source: "draft-zone-fill",
+        paint: { "fill-color": DRAFT_COLOR, "fill-opacity": 0.12 },
+      });
+      map.addLayer({
+        id: "draft-zone-line",
+        type: "line",
+        source: "draft-zone-line",
+        paint: { "line-color": DRAFT_COLOR, "line-width": 2, "line-dasharray": [2, 1.5] },
+      });
+      map.addLayer({
+        id: "draft-zone-points",
+        type: "circle",
+        source: "draft-zone-points",
+        paint: {
+          "circle-radius": ["case", ["get", "isFirst"], 6, 4],
+          "circle-color": DRAFT_COLOR,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#0B0F14",
+        },
+      });
+
       // ---- Popups ----
-      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: "aegis-popup" });
 
       const bindPopup = (layerId: string, html: (props: any) => string) => {
         map.on("mouseenter", layerId, (e) => {
+          if (draftPointsRef.current.length > 0) return;
           map.getCanvas().style.cursor = "pointer";
           const feature = e.features?.[0];
           if (!feature) return;
@@ -455,43 +472,36 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
         });
       };
 
-      bindPopup(
-        "facilities-circle",
-        (p) => {
-          const type = String(p.type || "port") as FacilityType;
-          const color = facilityColor[type] ?? facilityColor.port;
-          const status = facilityStatus[type] ?? facilityStatus.port;
+      bindPopup("facilities-circle", (p) => {
+        const type = String(p.type || "port") as FacilityType;
+        const color = facilityColor[type] ?? facilityColor.port;
+        const status = facilityStatus[type] ?? facilityStatus.port;
+        return `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;min-width:170px">
+          <div style="font-weight:600;color:#F6F7F9;margin-bottom:4px">${escapeHtml(p.name)}</div>
+          <div style="display:flex;align-items:center;gap:6px;color:#8A96A3">
+            <span style="width:7px;height:7px;border-radius:999px;background:${color};display:inline-block"></span>
+            ${escapeHtml(status)}
+          </div>
+        </div>`;
+      });
 
-          return `<div style="font-family:monospace;font-size:12px;color:#0B0F14;min-width:170px"><strong>${escapeHtml(
-            p.name
-          )}</strong><br/><span style="display:inline-flex;align-items:center;gap:6px;margin-top:4px"><span style="width:8px;height:8px;border-radius:999px;background:${color};display:inline-block"></span>${escapeHtml(
-            type
-          )}</span><br/><span>${escapeHtml(status)}</span></div>`;
-        }
-      );
-      bindPopup(
-        "corridors-line",
-        (p) =>
-          `<div style="font-family:monospace;font-size:12px;color:#0B0F14"><strong>${p.name}</strong><br/>risk: ${p.risk}/100</div>`
-      );
-      bindPopup(
-        "vessels-symbol",
-        (p) =>
-          `<div style="font-family:monospace;font-size:12px;color:#0B0F14;min-width:160px"><strong>${escapeHtml(
-            p.name
-          )}</strong><br/>MMSI ${escapeHtml(p.mmsi)}<br/>${
-            p.isTanker ? "Tanker" : "Other vessel"
-          }<br/>Speed ${formatNumber(p.sog, 1, " kn")}<br/>Course ${formatNumber(
-            p.cog,
-            1,
-            " deg"
-          )}</div>`
-      );
+      bindPopup("corridors-line", (p) => `<div style="font-family:'JetBrains Mono',monospace;font-size:11px">
+        <div style="font-weight:600;color:#F6F7F9;margin-bottom:2px">${escapeHtml(p.name)}</div>
+        <div style="color:#8A96A3">risk score <span style="color:#E7ECEF">${p.risk}</span>/100</div>
+      </div>`);
+
+      bindPopup("vessels-symbol", (p) => `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;min-width:160px">
+        <div style="font-weight:600;color:#F6F7F9;margin-bottom:4px">${escapeHtml(p.name)}</div>
+        <div style="color:#8A96A3">MMSI <span style="color:#E7ECEF">${escapeHtml(p.mmsi)}</span></div>
+        <div style="color:#8A96A3">${p.isTanker ? "Tanker" : "Other vessel"}</div>
+        <div style="color:#8A96A3">Speed <span style="color:#E7ECEF">${formatNumber(p.sog, 1, " kn")}</span></div>
+        <div style="color:#8A96A3">Course <span style="color:#E7ECEF">${formatNumber(p.cog, 1, "°")}</span></div>
+      </div>`);
 
       map.on("click", "vessels-symbol", (e) => {
+        if (draftPointsRef.current.length > 0) return;
         const props = e.features?.[0]?.properties;
         if (!props) return;
-
         setSelectedVessel({
           mmsi: Number(props.mmsi),
           name: String(props.name || "Unknown vessel"),
@@ -508,15 +518,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
           isTanker: toBoolean(props.isTanker),
           lastUpdate: Number(props.lastUpdate),
         });
-      });
-
-      map.on("draw.create", (event: any) => {
-        const feature = event.features?.[0];
-        const coordinates = feature?.geometry?.coordinates?.[0];
-        if (Array.isArray(coordinates) && coordinates.length > 2) {
-          onZoneDrawn(coordinates.slice(0, -1));
-        }
-        draw.deleteAll();
+        setInspectorOpen(true);
       });
 
       loadedRef.current = true;
@@ -531,19 +533,107 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
     };
   }, []);
 
+  // ---- Custom draw interaction ----
   useEffect(() => {
     const map = mapRef.current;
-    const draw = drawRef.current;
-    if (!map || !draw || !mapReady) return;
+    if (!map || !mapReady) return;
 
-    map.getCanvas().style.cursor = isDrawing ? "crosshair" : "";
+    const updateDraftSource = () => {
+      const pts = draftPointsRef.current;
+      const pointSource = map.getSource("draft-zone-points") as maplibregl.GeoJSONSource | undefined;
+      const lineSource = map.getSource("draft-zone-line") as maplibregl.GeoJSONSource | undefined;
+      const fillSource = map.getSource("draft-zone-fill") as maplibregl.GeoJSONSource | undefined;
+
+      pointSource?.setData({
+        type: "FeatureCollection",
+        features: pts.map((pt, i) => ({
+          type: "Feature",
+          properties: { isFirst: i === 0 },
+          geometry: { type: "Point", coordinates: pt },
+        })),
+      });
+      lineSource?.setData(
+        pts.length >= 2
+          ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: pts } }] }
+          : emptyFC
+      );
+      fillSource?.setData(
+        pts.length >= 3
+          ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[...pts, pts[0]]] } }] }
+          : emptyFC
+      );
+    };
+
+    const dedupeClose = (pts: [number, number][]): number[][] => {
+      const out: [number, number][] = [];
+      for (const pt of pts) {
+        const prev = out[out.length - 1];
+        if (!prev) {
+          out.push(pt);
+          continue;
+        }
+        const a = map.project(prev);
+        const b = map.project(pt);
+        if (Math.hypot(a.x - b.x, a.y - b.y) > DEDUPE_PX) out.push(pt);
+      }
+      return out;
+    };
+
+    const finalizeDraft = () => {
+      const pts = dedupeClose(draftPointsRef.current);
+      draftPointsRef.current = [];
+      updateDraftSource();
+      if (pts.length >= 3) onZoneDrawn(pts);
+    };
+
+    const cancelDraft = () => {
+      draftPointsRef.current = [];
+      updateDraftSource();
+    };
+
+    const handleClick = (e: maplibregl.MapMouseEvent) => {
+      const pts = draftPointsRef.current;
+      if (pts.length >= 3) {
+        const first = map.project(pts[0] as [number, number]);
+        const clicked = map.project(e.lngLat);
+        if (Math.hypot(first.x - clicked.x, first.y - clicked.y) <= CLOSE_VERTEX_PX) {
+          finalizeDraft();
+          return;
+        }
+      }
+      draftPointsRef.current = [...pts, [e.lngLat.lng, e.lngLat.lat]];
+      updateDraftSource();
+    };
+
+    const handleDblClick = (e: maplibregl.MapMouseEvent) => {
+      e.preventDefault();
+      if (draftPointsRef.current.length >= 3) finalizeDraft();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancelDraft();
+    };
+
     if (isDrawing) {
-      draw.changeMode("draw_polygon");
+      map.getCanvas().style.cursor = "crosshair";
+      map.doubleClickZoom.disable();
+      map.on("click", handleClick);
+      map.on("dblclick", handleDblClick);
+      window.addEventListener("keydown", handleKeyDown);
     } else {
-      draw.changeMode("simple_select");
+      cancelDraft();
+      map.getCanvas().style.cursor = "";
+      map.doubleClickZoom.enable();
     }
-  }, [isDrawing, mapReady]);
 
+    return () => {
+      map.off("click", handleClick);
+      map.off("dblclick", handleDblClick);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isDrawing, mapReady, onZoneDrawn]);
+
+  // ---- Tension zone layers ----
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -556,40 +646,19 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
       const data = zonesToGeoJSON([zone]);
 
       if (!map.getSource(sourceId)) {
-        map.addSource(sourceId, {
-          type: "geojson",
-          data,
-        });
+        map.addSource(sourceId, { type: "geojson", data });
         map.addLayer(
-          {
-            id: fillLayerId,
-            type: "fill",
-            source: sourceId,
-            paint: {
-              "fill-color": VESSEL_AFFECTED_COLOR,
-              "fill-opacity": zone.tensionPct / 300,
-            },
-          },
-          "facilities-circle"
+          { id: fillLayerId, type: "fill", source: sourceId, paint: { "fill-color": VESSEL_AFFECTED_COLOR, "fill-opacity": zone.tensionPct / 300 } },
+          "facilities-halo"
         );
         map.addLayer(
-          {
-            id: strokeLayerId,
-            type: "line",
-            source: sourceId,
-            paint: {
-              "line-color": VESSEL_AFFECTED_COLOR,
-              "line-width": 2,
-              "line-opacity": 1,
-            },
-          },
-          "facilities-circle"
+          { id: strokeLayerId, type: "line", source: sourceId, paint: { "line-color": VESSEL_AFFECTED_COLOR, "line-width": 2, "line-opacity": 1 } },
+          "facilities-halo"
         );
         return;
       }
 
-      const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
-      source?.setData(data);
+      (map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined)?.setData(data);
       map.setPaintProperty(fillLayerId, "fill-opacity", zone.tensionPct / 300);
     });
 
@@ -597,25 +666,18 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
     style.layers
       .filter((layer) => layer.id.startsWith("tension-zone-"))
       .forEach((layer) => {
-        const zoneId = layer.id
-          .replace("tension-zone-stroke-", "")
-          .replace("tension-zone-", "");
-        if (!activeZoneIds.has(zoneId) && map.getLayer(layer.id)) {
-          map.removeLayer(layer.id);
-        }
+        const zoneId = layer.id.replace("tension-zone-stroke-", "").replace("tension-zone-", "");
+        if (!activeZoneIds.has(zoneId) && map.getLayer(layer.id)) map.removeLayer(layer.id);
       });
 
     Object.keys(style.sources)
       .filter((sourceId) => sourceId.startsWith("tension-zone-source-"))
       .forEach((sourceId) => {
         const zoneId = sourceId.replace("tension-zone-source-", "");
-        if (!activeZoneIds.has(zoneId) && map.getSource(sourceId)) {
-          map.removeSource(sourceId);
-        }
+        if (!activeZoneIds.has(zoneId) && map.getSource(sourceId)) map.removeSource(sourceId);
       });
   }, [mapReady, zones]);
 
-  // Push live vessel updates into the map source whenever they change
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -628,7 +690,6 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-
     let expanded = false;
     const intervalId = window.setInterval(() => {
       if (!map.getLayer("vessels-affected")) return;
@@ -636,10 +697,8 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
       map.setPaintProperty("vessels-affected", "circle-radius", expanded ? 18 : 12);
       map.setPaintProperty("vessels-affected", "circle-opacity", expanded ? 0.12 : 0.28);
     }, 700);
-
     return () => window.clearInterval(intervalId);
   }, [mapReady]);
-
 
   useEffect(() => {
     if (!selectedVessel) return;
@@ -651,146 +710,131 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, onZoneDrawn }: 
     setSelectedVessel(vesselToDetails(latestSelected));
   }, [selectedVessel?.mmsi, vessels]);
 
+  const meta = statusMeta[status];
+
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg border border-border">
+    <div className="relative h-full w-full overflow-hidden rounded-lg border border-border bg-base">
       <div ref={containerRef} className="h-full w-full" />
 
-      <div className="pointer-events-auto absolute left-3 right-14 top-3 z-10 rounded-md border border-border bg-surface/95 px-3 py-3 font-mono text-[11px] text-muted shadow-lg backdrop-blur sm:left-auto sm:w-72">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold text-ink">AIS Live</div>
-            <div>Last update: {latestUpdate ? formatLastUpdate(latestUpdate) : "waiting"}</div>
-          </div>
-          <span className="mt-1 h-2 w-2 shrink-0 animate-pulseDot rounded-full bg-amber" />
-        </div>
-
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
-            <div>Ships</div>
-            <div className="text-lg font-semibold text-ink">{vessels.length}</div>
-          </div>
-          <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
-            <div>Tankers</div>
-            <div className="text-lg font-semibold" style={{ color: VESSEL_TANKER_COLOR }}>
-              {tankerCount}
-            </div>
-          </div>
-          <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
-            <div>Other</div>
-            <div className="text-lg font-semibold text-ink">{otherVesselCount}</div>
+      {!mapReady && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-base">
+          <div className="flex items-center gap-3 font-mono text-xs text-muted">
+            <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
+            LOADING MARITIME LAYER…
           </div>
         </div>
+      )}
 
-        <div className="mt-3 border-t border-border/80 pt-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-xs font-semibold text-ink">Selected Vessel</div>
-            {selectedVessel && (
-              <button
-                type="button"
-                className="rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:border-amber hover:text-amber"
-                onClick={() => setSelectedVessel(null)}
-              >
-                Clear
-              </button>
-            )}
+      {isDrawing && (
+        <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-amber/40 bg-surface/95 px-4 py-1.5 font-mono text-[11px] text-amber shadow-lg backdrop-blur">
+          Click to place points · click first point or double-click to finish · Esc to cancel
+        </div>
+      )}
+
+      {/* Inspector: connection + fleet counts + selected vessel */}
+      <div className="pointer-events-auto absolute left-3 top-3 z-10 w-72 overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setInspectorOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-3 py-2.5"
+        >
+          <div className="flex items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${status === "live" ? "animate-pulseDot" : ""}`} />
+            <span className={`text-xs font-semibold tracking-wider ${meta.text}`}>{meta.label}</span>
           </div>
+          <span className="text-muted">{inspectorOpen ? "▾" : "▸"}</span>
+        </button>
 
-          {selectedVessel ? (
-            <div className="space-y-1">
-              <div className="truncate text-sm font-semibold text-ink">{selectedVessel.name}</div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <span>MMSI</span>
-                <span className="text-right text-ink">{selectedVessel.mmsi}</span>
-                <span>Class</span>
-                <span className="text-right text-ink">
-                  {selectedVessel.isTanker ? "Tanker" : "Other vessel"}
-                </span>
-                <span>AIS type</span>
-                <span className="text-right text-ink">{selectedVessel.type ?? "n/a"}</span>
-                <span>Call sign</span>
-                <span className="truncate text-right text-ink">{selectedVessel.callSign || "n/a"}</span>
-                <span>IMO</span>
-                <span className="text-right text-ink">{selectedVessel.imoNumber ?? "n/a"}</span>
-                <span>Destination</span>
-                <span className="truncate text-right text-ink">
-                  {selectedVessel.destination || "n/a"}
-                </span>
-                <span>Speed</span>
-                <span className="text-right text-ink">
-                  {formatNumber(selectedVessel.sog, 1, " kn")}
-                </span>
-                <span>Course</span>
-                <span className="text-right text-ink">
-                  {formatNumber(selectedVessel.cog, 1, " deg")}
-                </span>
-                <span>Heading</span>
-                <span className="text-right text-ink">
-                  {formatNumber(selectedVessel.heading, 0, " deg")}
-                </span>
-                <span>Draught</span>
-                <span className="text-right text-ink">
-                  {formatNumber(selectedVessel.draught, 1, " m")}
-                </span>
-                <span>Lat / lon</span>
-                <span className="text-right text-ink">
-                  {formatNumber(selectedVessel.lat, 3)}, {formatNumber(selectedVessel.lon, 3)}
-                </span>
-                <span>Updated</span>
-                <span className="text-right text-ink">
-                  {formatLastUpdate(selectedVessel.lastUpdate)}
-                </span>
+        {inspectorOpen && (
+          <div className="border-t border-border/80 px-3 pb-3 pt-2.5">
+            <div className="mb-2 text-[10px] text-muted">Last update: {latestUpdate ? formatLastUpdate(latestUpdate) : "waiting"}</div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
+                <div>Ships</div>
+                <div className="text-lg font-semibold text-ink">{vessels.length}</div>
+              </div>
+              <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
+                <div>Tankers</div>
+                <div className="text-lg font-semibold" style={{ color: VESSEL_TANKER_COLOR }}>
+                  {tankerCount}
+                </div>
+              </div>
+              <div className="rounded border border-border/80 bg-base/70 px-2 py-2">
+                <div>Other</div>
+                <div className="text-lg font-semibold text-ink">{otherVesselCount}</div>
               </div>
             </div>
-          ) : (
-            <div className="text-ink">None</div>
-          )}
-        </div>
+
+            <div className="mt-3 border-t border-border/80 pt-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-ink">Selected vessel</div>
+                {selectedVessel && (
+                  <button
+                    type="button"
+                    className="rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:border-amber hover:text-amber"
+                    onClick={() => setSelectedVessel(null)}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {selectedVessel ? (
+                <div className="space-y-1">
+                  <div className="truncate text-sm font-semibold text-ink">{selectedVessel.name}</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                    <span>MMSI</span>
+                    <span className="text-right text-ink">{selectedVessel.mmsi}</span>
+                    <span>Class</span>
+                    <span className="text-right text-ink">{selectedVessel.isTanker ? "Tanker" : "Other vessel"}</span>
+                    <span>Speed</span>
+                    <span className="text-right text-ink">{formatNumber(selectedVessel.sog, 1, " kn")}</span>
+                    <span>Course</span>
+                    <span className="text-right text-ink">{formatNumber(selectedVessel.cog, 1, "°")}</span>
+                    <span>Destination</span>
+                    <span className="truncate text-right text-ink">{selectedVessel.destination || "n/a"}</span>
+                    <span>Updated</span>
+                    <span className="text-right text-ink">{formatLastUpdate(selectedVessel.lastUpdate)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-ink/60">Click a vessel on the map</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-md border border-border bg-surface/90 px-3 py-2 font-mono text-[10px] text-muted backdrop-blur">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: "#D64545" }} />
-          High-risk corridor
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: facilityColor.refinery }} />
-          Refinery
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: facilityColor.spr }} />
-          Strategic reserve
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: facilityColor.port }} />
-          Port
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: "#F6F7F9" }} />
-          Live vessels ({vessels.length})
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: VESSEL_TANKER_COLOR }} />
-          Tanker ({tankerCount})
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: VESSEL_OTHER_COLOR }} />
-          Other vessel ({otherVesselCount})
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: VESSEL_STALE_COLOR }} />
-          Stale (&gt;10min)
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: VESSEL_AFFECTED_COLOR }} />
-          In tension zone
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: VESSEL_APPROACHING_COLOR }} />
-          Approaching zone
-        </div>
+      {/* Legend chip */}
+      <div className="pointer-events-auto absolute bottom-3 left-3 z-10 overflow-hidden rounded-md border border-border bg-surface/90 font-mono text-[10px] text-muted backdrop-blur">
+        <button type="button" onClick={() => setLegendOpen((v) => !v)} className="flex items-center gap-2 px-3 py-2">
+          <span>LEGEND</span>
+          <span>{legendOpen ? "▾" : "▸"}</span>
+        </button>
+        {legendOpen && (
+          <div className="flex flex-col gap-1.5 border-t border-border/80 px-3 pb-3 pt-2">
+            <LegendRow color="#D64545" label="High-risk corridor" />
+            <LegendRow color={facilityColor.refinery} label="Refinery" />
+            <LegendRow color={facilityColor.spr} label="Strategic reserve" />
+            <LegendRow color={facilityColor.port} label="Port" />
+            <LegendRow color={VESSEL_TANKER_COLOR} label="Tanker" />
+            <LegendRow color={VESSEL_OTHER_COLOR} label="Other vessel" />
+            <LegendRow color={VESSEL_STALE_COLOR} label="Stale (>10min)" />
+            <LegendRow color={VESSEL_AFFECTED_COLOR} label="In tension zone" />
+            <LegendRow color={VESSEL_APPROACHING_COLOR} label="Approaching zone" />
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+const LegendRow = ({ color, label }: { color: string; label: string }) => (
+  <div className="flex items-center gap-2">
+    <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+    {label}
+  </div>
+);
 
 export default VesselMap;

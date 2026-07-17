@@ -18,20 +18,34 @@ export interface Vessel {
   lastUpdate: number;
 }
 
+export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline";
+
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 export const useVesselStream = () => {
   const [vessels, setVessels] = useState<Vessel[]>([]);
+  const [status, setStatus] = useState<StreamStatus>("connecting");
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL);
+    const socket = io(SOCKET_URL, {
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+    });
     socketRef.current = socket;
-    socket.on("vessels:update", (data: Vessel[]) => setVessels(data));
+
+    socket.on("connect", () => setStatus("live"));
+    socket.on("disconnect", () => setStatus("offline"));
+    socket.on("reconnect_attempt", () => setStatus("reconnecting"));
+    socket.on("vessels:update", (data: Vessel[]) => {
+      setVessels(data);
+      setStatus("live");
+    });
+
     return () => {
       socket.disconnect();
     };
   }, []);
 
-  return vessels;
+  return { vessels, status };
 };

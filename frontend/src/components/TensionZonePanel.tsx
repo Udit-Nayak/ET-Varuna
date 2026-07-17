@@ -67,7 +67,7 @@ const TensionZonePanel = ({
 
   return (
     <aside
-      className={`pointer-events-auto absolute right-3 top-24 z-20 max-h-[calc(100%-7rem)] w-80 overflow-y-auto rounded-md border border-border bg-surface/95 p-3 font-mono text-xs text-muted shadow-lg backdrop-blur transition-transform duration-300 ${
+className={`pointer-events-auto absolute right-3 top-3 z-20 max-h-[calc(100%-1.5rem)] w-80 overflow-y-auto rounded-md border border-border bg-surface/95 p-3 font-mono text-xs text-muted shadow-lg backdrop-blur transition-transform duration-300 ${
         zones.length > 0 ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)]"
       }`}
     >

@@ -10,12 +10,7 @@ import { pointInPolygon } from "../utils/geo";
 const ACTIVE_CORRIDORS = 3;
 
 const formatUtcTime = (date: Date) =>
-  date.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZone: "UTC",
-  });
+  date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" });
 
 const presetPolygons = {
   hormuz: {
@@ -53,7 +48,7 @@ const presetPolygons = {
 type PresetKey = keyof typeof presetPolygons;
 
 const LiveMap = () => {
-  const vessels = useVesselStream();
+  const { vessels, status } = useVesselStream();
   const {
     zones,
     isDrawing,
@@ -66,17 +61,10 @@ const LiveMap = () => {
     computeImpact,
   } = useSimulation();
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const tankerCount = useMemo(
-    () => vessels.reduce((count, vessel) => count + (vessel.isTanker ? 1 : 0), 0),
-    [vessels]
-  );
+
+  const tankerCount = useMemo(() => vessels.reduce((count, v) => count + (v.isTanker ? 1 : 0), 0), [vessels]);
   const affectedVessels = useMemo(
-    () =>
-      vessels
-        .filter((vessel) =>
-          zones.some((zone) => pointInPolygon([vessel.lon, vessel.lat], zone.polygon))
-        )
-        .map((vessel) => vessel.mmsi),
+    () => vessels.filter((v) => zones.some((z) => pointInPolygon([v.lon, v.lat], z.polygon))).map((v) => v.mmsi),
     [vessels, zones]
   );
   const impact = useMemo(() => computeImpact(), [computeImpact]);
@@ -89,12 +77,7 @@ const LiveMap = () => {
   const handlePreset = useCallback(
     (preset: PresetKey) => {
       const config = presetPolygons[preset];
-      addZone(
-        config.polygon,
-        matchCorridorToZone(config.polygon),
-        config.tensionPct,
-        config.durationDays
-      );
+      addZone(config.polygon, matchCorridorToZone(config.polygon), config.tensionPct, config.durationDays);
       setIsDrawing(false);
     },
     [addZone, setIsDrawing]
@@ -108,17 +91,24 @@ const LiveMap = () => {
     [addZone, setIsDrawing]
   );
 
+  const statusPill =
+    status === "live"
+      ? { label: "LIVE", cls: "border-safe/50 bg-safe/10 text-safe" }
+      : status === "reconnecting"
+      ? { label: "RECONNECTING", cls: "border-amber/50 bg-amber/10 text-amber" }
+      : status === "offline"
+      ? { label: "OFFLINE", cls: "border-risk/50 bg-risk/10 text-risk" }
+      : { label: "CONNECTING", cls: "border-border bg-surface text-muted" };
+
   return (
     <div className="flex h-screen flex-col bg-base text-ink">
       <header className="border-b border-border bg-base/90 px-6 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="font-display text-lg font-semibold tracking-tight">
-              Aegis SCR - Live Map
-            </span>
-            <span className="inline-flex items-center gap-2 rounded border border-[#D64545]/50 bg-[#D64545]/10 px-2 py-1 font-mono text-[10px] font-semibold text-[#FF8A8A]">
-              <span className="h-2 w-2 animate-pulseDot rounded-full bg-[#D64545]" />
-              LIVE
+            <span className="font-display text-lg font-semibold tracking-tight">Aegis SCR — Live Map</span>
+            <span className={`inline-flex items-center gap-2 rounded border px-2 py-1 font-mono text-[10px] font-semibold ${statusPill.cls}`}>
+              <span className={`h-2 w-2 rounded-full ${status === "live" ? "animate-pulseDot" : ""}`} style={{ background: "currentColor" }} />
+              {statusPill.label}
             </span>
           </div>
           <Link
@@ -132,22 +122,10 @@ const LiveMap = () => {
 
       <section className="border-b border-border bg-surface/80 px-6 py-3">
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-3 font-mono text-xs text-muted md:grid-cols-4">
-          <div className="rounded border border-border bg-base/70 px-3 py-2">
-            <div>Total vessels</div>
-            <div className="text-lg font-semibold text-ink">{vessels.length}</div>
-          </div>
-          <div className="rounded border border-border bg-base/70 px-3 py-2">
-            <div>Tankers</div>
-            <div className="text-lg font-semibold text-[#5EC9FF]">{tankerCount}</div>
-          </div>
-          <div className="rounded border border-border bg-base/70 px-3 py-2">
-            <div>Active corridors</div>
-            <div className="text-lg font-semibold text-ink">{ACTIVE_CORRIDORS}</div>
-          </div>
-          <div className="rounded border border-border bg-base/70 px-3 py-2">
-            <div>UTC time</div>
-            <div className="text-lg font-semibold text-ink">{formatUtcTime(currentTime)}</div>
-          </div>
+          <StatCard label="Total vessels" value={vessels.length} />
+          <StatCard label="Tankers" value={tankerCount} color="#5EC9FF" />
+          <StatCard label="Active corridors" value={ACTIVE_CORRIDORS} />
+          <StatCard label="UTC time" value={formatUtcTime(currentTime)} />
         </div>
       </section>
 
@@ -158,6 +136,7 @@ const LiveMap = () => {
             zones={zones}
             affectedVessels={affectedVessels}
             isDrawing={isDrawing}
+            status={status}
             onZoneDrawn={handleZoneDrawn}
           />
           <TensionDrawer
@@ -179,5 +158,14 @@ const LiveMap = () => {
     </div>
   );
 };
+
+const StatCard = ({ label, value, color }: { label: string; value: string | number; color?: string }) => (
+  <div className="rounded border border-border bg-base/70 px-3 py-2">
+    <div>{label}</div>
+    <div className="text-lg font-semibold" style={{ color: color ?? "#E7ECEF" }}>
+      {value}
+    </div>
+  </div>
+);
 
 export default LiveMap;

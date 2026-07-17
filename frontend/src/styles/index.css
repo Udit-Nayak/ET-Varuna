@@ -36,3 +36,47 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+/* MapLibre theme overrides — keep the dashboard dark theme consistent
+   inside the map's own chrome (popups, zoom controls, attribution). */
+.aegis-popup .maplibregl-popup-content {
+  background: #121924;
+  border: 1px solid #24303d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: #e7ecef;
+}
+.aegis-popup .maplibregl-popup-tip {
+  border-top-color: #121924 !important;
+  border-bottom-color: #121924 !important;
+}
+.maplibregl-popup-close-button {
+  display: none;
+}
+.maplibregl-ctrl-group {
+  background: #121924 !important;
+  border: 1px solid #24303d !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+  width: 30px !important;
+  height: 30px !important;
+}
+.maplibregl-ctrl-group button:hover {
+  background: #1a2430 !important;
+}
+.maplibregl-ctrl-icon {
+  filter: invert(90%);
+}
+.maplibregl-ctrl-attrib {
+  background: rgba(11, 15, 20, 0.65) !important;
+  border-radius: 6px 0 0 0;
+}
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib a {
+  color: #8a96a3 !important;
+  font-size: 10px !important;
+}
