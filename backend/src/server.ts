@@ -9,12 +9,14 @@ import { connectDB } from "./config/db";
 import "./config/firebase";
 import griaRoutes from "./agents/gria/routes";
 import dsmRoutes from "./agents/dsm/routes";
+import sroaRoutes from "./agents/sroa/routes";
 import authRoutes from "./routes/authRoutes";
 import { bootstrapGria } from "./agents/gria/bootstrap";
 import nationalStateRoutes from "./agents/shared/nationalStateRoutes";
 import livePriceRoutes from "./agents/shared/livePriceRoutes";
 import { startLivePriceScheduler } from "./agents/shared/livePriceScheduler";
 import { setupVesselSocket } from "./sockets/vesselSocket";
+import { aisStreamService } from "./services/aisStreamService";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -31,6 +33,7 @@ app.use("/api/gria", griaRoutes);
 app.use("/api", nationalStateRoutes);
 app.use("/api", livePriceRoutes);
 app.use("/api/dsm", dsmRoutes);
+app.use("/api/sroa", sroaRoutes);
 
 // Module routers get mounted here as each teammate builds their layer, e.g.:
 // app.use("/api/gria", griaRoutes);
@@ -46,9 +49,11 @@ const startServer = async (): Promise<void> => {
 
   const httpServer = http.createServer(app);
   setupVesselSocket(httpServer);
+  aisStreamService.start();
 
   httpServer.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
+    console.log("Socket.io attached");
   });
 };
 

@@ -10,6 +10,10 @@ export interface Vessel {
   heading?: number;
   name?: string;
   type?: number;
+  callSign?: string;
+  destination?: string;
+  imoNumber?: number;
+  draught?: number;
   isTanker: boolean;
   lastUpdate: number;
 }

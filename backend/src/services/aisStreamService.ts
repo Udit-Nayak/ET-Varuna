@@ -9,32 +9,53 @@ export interface VesselState {
   heading?: number;
   name?: string;
   type?: number;
+  callSign?: string;
+  destination?: string;
+  imoNumber?: number;
+  draught?: number;
   isTanker: boolean;
   lastUpdate: number;
 }
 
 type Listener = (vessels: VesselState[]) => void;
+type BoundingBox = [[number, number], [number, number]];
+type StaticVesselData = Pick<
+  VesselState,
+  "name" | "type" | "callSign" | "destination" | "imoNumber" | "draught" | "isTanker"
+>;
 
 const AIS_URL = "wss://stream.aisstream.io/v0/stream";
 
-// Red Sea + Persian Gulf/Hormuz + Arabian Sea + Bay of Bengal.
-// Format per AISStream docs: [[[lat1, lon1], [lat2, lon2]]]
-const BOUNDING_BOXES = [[[0, 30], [30, 100]]];
+// India-focused regions: Arabian Sea/west coast, Persian Gulf/Hormuz,
+// Bay of Bengal/east coast, and Sri Lanka/southern India.
+// Format per AISStream docs: [[[lat1, lon1], [lat2, lon2]], ...]
+const BOUNDING_BOXES: BoundingBox[] = [
+  [[8, 60], [25, 76]],
+  [[24, 48], [30, 60]],
+  [[6, 76], [22, 95]],
+  [[4, 72], [10, 82]],
+];
 
-// TEMP DEBUG SWITCH — set to false once you confirm tankers are flowing,
-// to go back to tanker-only filtering for the demo.
-const DEBUG_SHOW_ALL_VESSELS = true;
+const POSITION_MESSAGE_TYPES = [
+  "PositionReport",
+  "StandardClassBPositionReport",
+  "ExtendedClassBPositionReport",
+];
+const STATIC_MESSAGE_TYPES = ["ShipStaticData", "StaticDataReport"];
 
 const isTankerType = (type?: number) => type !== undefined && type >= 80 && type <= 89;
 
 const STALE_MS = 15 * 60 * 1000;
 const BROADCAST_INTERVAL_MS = 4000;
+const MAX_BROADCAST_VESSELS = 3000;
 
 class AisStreamService {
   private vessels = new Map<number, VesselState>();
+  private staticDataByMmsi = new Map<number, StaticVesselData>();
   private listeners: Listener[] = [];
   private ws: WebSocket | null = null;
   private reconnectDelay = 2000;
+  private lastCapWarningAt = 0;
 
   // diagnostics
   private positionReportCount = 0;
@@ -62,7 +83,7 @@ class AisStreamService {
         JSON.stringify({
           APIKey: apiKey,
           BoundingBoxes: BOUNDING_BOXES,
-          FilterMessageTypes: ["PositionReport", "ShipStaticData"],
+          FilterMessageTypes: [...POSITION_MESSAGE_TYPES, ...STATIC_MESSAGE_TYPES],
         })
       );
     });
@@ -98,9 +119,13 @@ class AisStreamService {
     if (!mmsi) return;
     const existing = this.vessels.get(mmsi);
 
-    if (msg.MessageType === "PositionReport") {
+    if (POSITION_MESSAGE_TYPES.includes(msg.MessageType)) {
       this.positionReportCount++;
-      const pr = msg.Message.PositionReport;
+      const pr = msg.Message?.[msg.MessageType];
+      if (!Number.isFinite(pr?.Latitude) || !Number.isFinite(pr?.Longitude)) return;
+
+      const staticData = this.staticDataByMmsi.get(mmsi);
+      const type = existing?.type ?? staticData?.type ?? pr.Type;
       this.vessels.set(mmsi, {
         mmsi,
         lat: pr.Latitude,
@@ -108,27 +133,51 @@ class AisStreamService {
         cog: pr.Cog,
         sog: pr.Sog,
         heading: pr.TrueHeading,
-        name: existing?.name ?? msg.MetaData.ShipName?.trim(),
-        type: existing?.type,
-        isTanker: existing?.isTanker ?? false,
+        name: existing?.name ?? staticData?.name ?? pr.Name?.trim() ?? msg.MetaData.ShipName?.trim(),
+        type,
+        callSign: existing?.callSign ?? staticData?.callSign,
+        destination: existing?.destination ?? staticData?.destination,
+        imoNumber: existing?.imoNumber ?? staticData?.imoNumber,
+        draught: existing?.draught ?? staticData?.draught,
+        isTanker: isTankerType(type),
         lastUpdate: Date.now(),
       });
     }
 
-    if (msg.MessageType === "ShipStaticData") {
+    if (STATIC_MESSAGE_TYPES.includes(msg.MessageType)) {
       this.staticDataCount++;
-      const sd = msg.Message.ShipStaticData;
+      const sd = msg.Message?.[msg.MessageType];
+      const name = sd?.Name?.trim() || sd?.ReportA?.Name?.trim() || existing?.name;
+      const type = sd?.Type ?? sd?.ReportB?.ShipType;
+      const staticData = {
+        name,
+        type,
+        callSign: sd?.CallSign?.trim() || sd?.ReportB?.CallSign?.trim() || existing?.callSign,
+        destination: sd?.Destination?.trim() || existing?.destination,
+        imoNumber: sd?.ImoNumber || existing?.imoNumber,
+        draught: sd?.MaximumStaticDraught || existing?.draught,
+        isTanker: isTankerType(type),
+      };
+
+      this.staticDataByMmsi.set(mmsi, staticData);
+
+      if (!existing) return;
+
       this.vessels.set(mmsi, {
         mmsi,
-        lat: existing?.lat ?? msg.MetaData.Latitude,
-        lon: existing?.lon ?? msg.MetaData.Longitude,
-        cog: existing?.cog,
-        sog: existing?.sog,
-        heading: existing?.heading,
-        name: sd.Name?.trim() || existing?.name,
-        type: sd.Type,
-        isTanker: isTankerType(sd.Type),
-        lastUpdate: existing?.lastUpdate ?? Date.now(),
+        lat: existing.lat,
+        lon: existing.lon,
+        cog: existing.cog,
+        sog: existing.sog,
+        heading: existing.heading,
+        name: staticData.name,
+        type: staticData.type,
+        callSign: staticData.callSign,
+        destination: staticData.destination,
+        imoNumber: staticData.imoNumber,
+        draught: staticData.draught,
+        isTanker: staticData.isTanker,
+        lastUpdate: existing.lastUpdate,
       });
     }
   }
@@ -145,13 +194,25 @@ class AisStreamService {
     const tankers = Array.from(this.vessels.values()).filter((v) => v.isTanker).length;
     console.log(
       `[AIS stats] total vessels tracked: ${total} | tankers: ${tankers} | ` +
-        `PositionReports received: ${this.positionReportCount} | ShipStaticData received: ${this.staticDataCount}`
+        `PositionReports received: ${this.positionReportCount} | ShipStaticData received: ${this.staticDataCount} | ` +
+        `broadcast cap: ${MAX_BROADCAST_VESSELS}`
     );
   }
 
   private broadcast() {
     const all = Array.from(this.vessels.values());
-    const output = DEBUG_SHOW_ALL_VESSELS ? all : all.filter((v) => v.isTanker);
+    const output =
+      all.length > MAX_BROADCAST_VESSELS
+        ? [...all].sort((a, b) => b.lastUpdate - a.lastUpdate).slice(0, MAX_BROADCAST_VESSELS)
+        : all;
+
+    if (all.length > MAX_BROADCAST_VESSELS && Date.now() - this.lastCapWarningAt > 60000) {
+      console.warn(
+        `[AIS stats] broadcasting ${MAX_BROADCAST_VESSELS} most recent vessels out of ${all.length} tracked`
+      );
+      this.lastCapWarningAt = Date.now();
+    }
+
     this.listeners.forEach((fn) => fn(output));
   }
 
