@@ -3,4 +3,4 @@ export * from "./User";
 export * from "./Intelligence";
 export * from "./PipelineLog";
 export * from "./NewsSource";
-
+export * from "./DsmPrediction";
