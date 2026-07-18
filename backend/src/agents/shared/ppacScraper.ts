@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import type { Element } from "domhandler";
 
 const PPAC_CRUDE_PRICE_URL = "https://ppac.gov.in/prices/international-prices-of-crude-oil";
 const PPAC_CRUDE_PRICE_DATA_URL = "https://ppac.gov.in/AjaxController/getInternationalPricesCrudeOil";
@@ -96,14 +97,14 @@ export async function fetchLivePriceFromPPAC(): Promise<PPACLivePrice> {
     // PPAC presents the running monthly average in the current month's table.
     // Prefer explicitly-labelled rows, then accept an Average row in a table
     // that contains Indian Basket data.
-    $("table").each((_index, table) => {
+    $("table").each((_index: number, table: Element) => {
       if (emptyResult.month_to_date_avg_usd !== null) return;
       const tableText = normaliseText($(table).text());
       if (!/indian\s+basket|crude\s+oil/i.test(tableText)) return;
 
       $(table)
         .find("tr")
-        .each((_rowIndex, row) => {
+        .each((_rowIndex: number, row: Element) => {
           if (emptyResult.month_to_date_avg_usd !== null) return;
           const rowText = normaliseText($(row).text());
           if (/\b(?:monthly|month\s*to\s*date|mtd)?\s*average\b/i.test(rowText)) {

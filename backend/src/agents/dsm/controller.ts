@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getDsmMock, retrieveDsmContext, runDsmSimulation } from "./service";
+import { getDsmMock, retrieveDsmContext, runDsmWorkflow } from "./service";
 
 const handleError = (res: Response, error: unknown, message: string): void => {
   const detail = error instanceof Error ? error.message : String(error);
@@ -8,10 +8,19 @@ const handleError = (res: Response, error: unknown, message: string): void => {
 
 export const simulate = async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await runDsmSimulation(req.body);
+    const result = await runDsmWorkflow(req.body);
     res.status(200).json(result);
   } catch (error) {
-    handleError(res, error, "Failed to run DSM simulation");
+    handleError(res, error, "Failed to run DSM workflow");
+  }
+};
+
+export const run = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await runDsmWorkflow(req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    handleError(res, error, "Failed to run DSM workflow");
   }
 };
 
