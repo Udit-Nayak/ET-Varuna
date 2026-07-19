@@ -338,52 +338,191 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
         },
       });
 
+      const makeFacilityIcon = (type: FacilityType, color: string) => {
+        const size = 30;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d")!;
+
+        ctx.translate(size / 2, size / 2);
+        ctx.shadowColor = "#05080C";
+        ctx.shadowBlur = 5;
+        ctx.shadowOffsetY = 1;
+        ctx.strokeStyle = "#071018";
+        ctx.fillStyle = color;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        if (type === "port") {
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.arc(0, -8, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(0, -4);
+          ctx.lineTo(0, 10);
+          ctx.moveTo(-7, 1);
+          ctx.lineTo(7, 1);
+          ctx.stroke();
+
+          ctx.strokeStyle = "#071018";
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.moveTo(0, -4);
+          ctx.lineTo(0, 10);
+          ctx.moveTo(-7, 1);
+          ctx.lineTo(7, 1);
+          ctx.stroke();
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 5, 9, 0.18 * Math.PI, 0.82 * Math.PI);
+          ctx.moveTo(-8, 8);
+          ctx.lineTo(-11, 5);
+          ctx.moveTo(8, 8);
+          ctx.lineTo(11, 5);
+          ctx.stroke();
+        } else if (type === "refinery") {
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          ctx.moveTo(-11, 10);
+          ctx.lineTo(-11, -3);
+          ctx.lineTo(-4, 1);
+          ctx.lineTo(-4, -4);
+          ctx.lineTo(3, 1);
+          ctx.lineTo(3, -4);
+          ctx.lineTo(11, 1);
+          ctx.lineTo(11, 10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = "rgba(246, 247, 249, 0.9)";
+          ctx.fillRect(-7.5, 5, 3, 3);
+          ctx.fillRect(-1.5, 5, 3, 3);
+          ctx.fillRect(4.5, 5, 3, 3);
+        } else {
+          ctx.lineWidth = 1.9;
+          ctx.beginPath();
+          ctx.ellipse(0, -8, 10, 4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.rect(-10, -8, 20, 17);
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.ellipse(0, 9, 10, 4, 0, 0, Math.PI);
+          ctx.stroke();
+
+          ctx.strokeStyle = "rgba(246, 247, 249, 0.8)";
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(-6, -2);
+          ctx.lineTo(6, -2);
+          ctx.moveTo(-6, 4);
+          ctx.lineTo(6, 4);
+          ctx.stroke();
+        }
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        return ctx.getImageData(0, 0, size, size);
+      };
+
+      map.addImage("facility-port", makeFacilityIcon("port", facilityColor.port));
+      map.addImage("facility-refinery", makeFacilityIcon("refinery", facilityColor.refinery));
+      map.addImage("facility-spr", makeFacilityIcon("spr", facilityColor.spr));
+
       map.addLayer({
         id: "facilities-halo",
         type: "circle",
         source: "facilities",
         paint: {
-          "circle-radius": 10,
+          "circle-radius": 11,
           "circle-color": ["match", ["get", "type"], "refinery", facilityColor.refinery, "spr", facilityColor.spr, facilityColor.port],
-          "circle-opacity": 0.16,
+          "circle-opacity": 0.12,
         },
       });
 
       map.addLayer({
-        id: "facilities-circle",
-        type: "circle",
+        id: "facilities-symbol",
+        type: "symbol",
         source: "facilities",
-        paint: {
-          "circle-radius": 5,
-          "circle-color": ["match", ["get", "type"], "refinery", facilityColor.refinery, "spr", facilityColor.spr, facilityColor.port],
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#0B0F14",
+        layout: {
+          "icon-image": ["match", ["get", "type"], "refinery", "facility-refinery", "spr", "facility-spr", "facility-port"],
+          "icon-size": 0.78,
+          "icon-allow-overlap": true,
         },
       });
 
-      const makeTriangle = (color: string) => {
-        const size = 22;
+      const makeShipIcon = (color: string) => {
+        const size = 34;
         const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext("2d")!;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 4;
+
+        ctx.translate(size / 2, size / 2);
+        ctx.shadowColor = "#05080C";
+        ctx.shadowBlur = 5;
+        ctx.shadowOffsetY = 1;
+        ctx.lineJoin = "round";
+
         ctx.fillStyle = color;
+        ctx.strokeStyle = "#071018";
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(size / 2, 1);
-        ctx.lineTo(size - 1, size - 1);
-        ctx.lineTo(size / 2, size * 0.7);
-        ctx.lineTo(1, size - 1);
+        ctx.moveTo(0, -14);
+        ctx.bezierCurveTo(7, -10, 10, 0, 9, 11);
+        ctx.lineTo(4, 15);
+        ctx.lineTo(-4, 15);
+        ctx.lineTo(-9, 11);
+        ctx.bezierCurveTo(-10, 0, -7, -10, 0, -14);
         ctx.closePath();
         ctx.fill();
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "rgba(246, 247, 249, 0.9)";
+        ctx.strokeStyle = "rgba(7, 16, 24, 0.55)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(-4.5, -4, 9, 7, 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = "rgba(246, 247, 249, 0.65)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-5.5, 9);
+        ctx.lineTo(5.5, 9);
+        ctx.stroke();
+
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.45;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-7, 16);
+        ctx.lineTo(-11, 20);
+        ctx.moveTo(7, 16);
+        ctx.lineTo(11, 20);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         return ctx.getImageData(0, 0, size, size);
       };
-      map.addImage("vessel-tanker", makeTriangle(VESSEL_TANKER_COLOR));
-      map.addImage("vessel-other", makeTriangle(VESSEL_OTHER_COLOR));
-      map.addImage("vessel-stale", makeTriangle(VESSEL_STALE_COLOR));
-      map.addImage("vessel-affected", makeTriangle(VESSEL_AFFECTED_COLOR));
-      map.addImage("vessel-approaching", makeTriangle(VESSEL_APPROACHING_COLOR));
+      map.addImage("vessel-tanker", makeShipIcon(VESSEL_TANKER_COLOR));
+      map.addImage("vessel-other", makeShipIcon(VESSEL_OTHER_COLOR));
+      map.addImage("vessel-stale", makeShipIcon(VESSEL_STALE_COLOR));
+      map.addImage("vessel-affected", makeShipIcon(VESSEL_AFFECTED_COLOR));
+      map.addImage("vessel-approaching", makeShipIcon(VESSEL_APPROACHING_COLOR));
 
       map.addSource("vessels", { type: "geojson", data: vesselsToGeoJSON([]) });
       map.addSource("affected-vessels", { type: "geojson", data: vesselsToGeoJSON([]) });
@@ -415,7 +554,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
             ["get", "isTanker"], "vessel-tanker",
             "vessel-other",
           ],
-          "icon-size": 0.85,
+          "icon-size": 0.62,
           "icon-rotate": ["get", "rotation"],
           "icon-rotation-alignment": "map",
           "icon-allow-overlap": true,
@@ -472,7 +611,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
         });
       };
 
-      bindPopup("facilities-circle", (p) => {
+      bindPopup("facilities-symbol", (p) => {
         const type = String(p.type || "port") as FacilityType;
         const color = facilityColor[type] ?? facilityColor.port;
         const status = facilityStatus[type] ?? facilityStatus.port;

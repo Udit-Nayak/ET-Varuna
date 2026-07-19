@@ -26,14 +26,24 @@ type StaticVesselData = Pick<
 
 const AIS_URL = "wss://stream.aisstream.io/v0/stream";
 
-// India-focused regions: Arabian Sea/west coast, Persian Gulf/Hormuz,
-// Bay of Bengal/east coast, and Sri Lanka/southern India.
+// Global commercial shipping regions. AISStream requires bounded boxes, so this
+// covers the busiest tanker/cargo lanes instead of subscribing to open ocean noise.
 // Format per AISStream docs: [[[lat1, lon1], [lat2, lon2]], ...]
 const BOUNDING_BOXES: BoundingBox[] = [
-  [[8, 60], [25, 76]],
-  [[24, 48], [30, 60]],
-  [[6, 76], [22, 95]],
-  [[4, 72], [10, 82]],
+  [[-38, -82], [48, -35]], // Atlantic and US east coast
+  [[18, -100], [52, -60]], // North America / Gulf / Caribbean
+  [[-8, -84], [18, -74]], // Panama approaches
+  [[30, -10], [46, 36]], // Mediterranean / Suez approach
+  [[48, -8], [62, 12]], // North Sea / English Channel
+  [[10, 32], [32, 62]], // Red Sea / Gulf / Hormuz
+  [[-36, 35], [28, 82]], // East Africa / Arabian Sea / India west
+  [[-15, 76], [24, 100]], // Bay of Bengal / Malacca west
+  [[-12, 95], [24, 122]], // Malacca / South China Sea
+  [[20, 118], [42, 146]], // China / Korea / Japan
+  [[-12, 105], [10, 130]], // Indonesia lanes
+  [[-45, 108], [-10, 156]], // Australia lanes
+  [[-42, 12], [-24, 34]], // Cape of Good Hope
+  [[-45, -78], [-8, -35]], // South America east/west approaches
 ];
 
 const POSITION_MESSAGE_TYPES = [
@@ -44,10 +54,11 @@ const POSITION_MESSAGE_TYPES = [
 const STATIC_MESSAGE_TYPES = ["ShipStaticData", "StaticDataReport"];
 
 const isTankerType = (type?: number) => type !== undefined && type >= 80 && type <= 89;
+const isTradingVesselType = (type?: number) => type !== undefined && type >= 70 && type <= 89;
 
 const STALE_MS = 15 * 60 * 1000;
 const BROADCAST_INTERVAL_MS = 4000;
-const MAX_BROADCAST_VESSELS = 3000;
+const MAX_BROADCAST_VESSELS = 5000;
 
 class AisStreamService {
   private vessels = new Map<number, VesselState>();
@@ -200,7 +211,9 @@ class AisStreamService {
   }
 
   private broadcast() {
-    const all = Array.from(this.vessels.values());
+    const all = Array.from(this.vessels.values()).filter(
+      (v) => isTradingVesselType(v.type) || Boolean(v.destination) || Boolean(v.draught)
+    );
     const output =
       all.length > MAX_BROADCAST_VESSELS
         ? [...all].sort((a, b) => b.lastUpdate - a.lastUpdate).slice(0, MAX_BROADCAST_VESSELS)
