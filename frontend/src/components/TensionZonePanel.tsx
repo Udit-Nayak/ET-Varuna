@@ -1,8 +1,10 @@
-import { SimulationImpact, TensionZone, ZoneImpact } from "../hooks/useSimulation";
+import { AgentZoneAnalysis, SimulationImpact, TensionZone, ZoneImpact } from "../hooks/useSimulation";
 
 interface TensionZonePanelProps {
   zones: TensionZone[];
   impact: SimulationImpact;
+  agentAnalyses: Record<string, AgentZoneAnalysis>;
+  onAnalyzeZone: (zone: TensionZone) => void;
   onSetTension: (id: string, pct: number) => void;
   onSetDuration: (id: string, days: number) => void;
   onRemoveZone: (id: string) => void;
@@ -55,6 +57,8 @@ const getZoneImpact = (impact: SimulationImpact, zoneId: string): ZoneImpact | u
 const TensionZonePanel = ({
   zones,
   impact,
+  agentAnalyses,
+  onAnalyzeZone,
   onSetTension,
   onSetDuration,
   onRemoveZone,
@@ -118,6 +122,17 @@ className={`pointer-events-auto absolute right-3 top-3 z-20 max-h-[calc(100%-1.5
                   onChange={(event) => onSetDuration(zone.id, Number(event.target.value))}
                 />
               </label>
+
+              <button
+                type="button"
+                className="mt-3 w-full rounded border border-amber/70 px-3 py-2 text-left text-amber transition-colors hover:bg-amber/10 disabled:cursor-wait disabled:opacity-60"
+                disabled={agentAnalyses[zone.id]?.status === "loading"}
+                onClick={() => onAnalyzeZone(zone)}
+              >
+                {agentAnalyses[zone.id]?.status === "loading" ? "Agents analyzing..." : "Run GRIA + DSM + SROA"}
+              </button>
+
+              <AgentAnalysisBlock analysis={agentAnalyses[zone.id]} />
             </div>
           ))}
         </div>
@@ -191,6 +206,51 @@ className={`pointer-events-auto absolute right-3 top-3 z-20 max-h-[calc(100%-1.5
         </div>
       </section>
     </aside>
+  );
+};
+
+const formatVolume = (value: number) =>
+  `${Math.round(value).toLocaleString("en-US", { maximumFractionDigits: 0 })} bbl`;
+
+const AgentAnalysisBlock = ({ analysis }: { analysis?: AgentZoneAnalysis }) => {
+  if (!analysis) {
+    return <div className="mt-3 rounded border border-border/70 bg-base/50 p-2 text-ink/60">Agent output pending</div>;
+  }
+
+  if (analysis.status === "loading") {
+    return <div className="mt-3 rounded border border-amber/40 bg-amber/10 p-2 text-amber">{analysis.message}</div>;
+  }
+
+  if (analysis.status === "error") {
+    return <div className="mt-3 rounded border border-risk/60 bg-risk/10 p-2 text-[#FF8A8A]">{analysis.message}</div>;
+  }
+
+  return (
+    <div className="mt-3 space-y-2 rounded border border-border/80 bg-base/60 p-2">
+      <div className="font-semibold text-ink">Agent Result</div>
+      <div>GRIA matches: <span className="text-ink">{analysis.griaMatches ?? 0}</span></div>
+      {analysis.dsm && (
+        <div>
+          DSM: <span className="text-ink">{analysis.dsm.capacityLossPct}%</span> loss /{" "}
+          <span className="text-ink">{analysis.dsm.durationDays}d</span>
+        </div>
+      )}
+      {analysis.sroa && (
+        <>
+          <div>
+            SROA: <span className="text-ink">{analysis.sroa.policy}</span>, release{" "}
+            <span className="text-ink">{formatVolume(analysis.sroa.totalReleasedVolume)}</span>
+          </div>
+          <div>
+            Reserve after: <span className="text-ink">{analysis.sroa.reserveAfterPlanDays.toFixed(2)} days</span>
+          </div>
+          <div className={analysis.sroa.safetyThresholdBreached ? "text-[#FF8A8A]" : "text-[#8FF0C2]"}>
+            {analysis.sroa.safetyThresholdBreached ? "Safety threshold breached" : "Safety threshold protected"}
+          </div>
+        </>
+      )}
+      {analysis.recommendation && <div className="border-t border-border/70 pt-2 text-ink">{analysis.recommendation}</div>}
+    </div>
   );
 };
 

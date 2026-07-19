@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 import TensionDrawer from "../components/TensionDrawer";
 import TensionZonePanel from "../components/TensionZonePanel";
 import VesselMap from "../components/VesselMap";
-import { matchCorridorToZone, useSimulation } from "../hooks/useSimulation";
+import { AgentZoneAnalysis, matchCorridorToZone, TensionZone, useSimulation } from "../hooks/useSimulation";
 import { useVesselStream } from "../hooks/useVesselStream";
 import { pointInPolygon } from "../utils/geo";
 
 const ACTIVE_CORRIDORS = 3;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const formatUtcTime = (date: Date) =>
   date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" });
@@ -47,6 +48,40 @@ const presetPolygons = {
 
 type PresetKey = keyof typeof presetPolygons;
 
+const corridorLabel = (corridorId: string | null) => {
+  const labels: Record<string, string> = {
+    hormuz: "Strait of Hormuz",
+    "bab-el-mandeb": "Bab-el-Mandeb",
+    malacca: "Strait of Malacca",
+    suez: "Suez Canal",
+    "persian-gulf": "Persian Gulf",
+  };
+
+  return corridorId ? labels[corridorId] ?? corridorId : "general maritime corridor";
+};
+
+const summarizeAgentResponse = (payload: any): AgentZoneAnalysis => ({
+  status: "ready",
+  corridor: String(payload.corridor ?? ""),
+  generatedAt: String(payload.generatedAt ?? ""),
+  griaMatches: Array.isArray(payload.gria?.matches) ? payload.gria.matches.length : 0,
+  dsm: {
+    capacityLossPct: Number(payload.dsm?.capacity_loss_pct ?? 0),
+    durationDays: Number(payload.dsm?.duration_days ?? 0),
+    severityEvents: Array.isArray(payload.dsm?.based_on_events) ? payload.dsm.based_on_events.length : 0,
+    summary: String(payload.dsm?.summary ?? ""),
+  },
+  sroa: {
+    policy: String(payload.sroa?.policy ?? ""),
+    totalReleasedVolume: Number(payload.sroa?.total_released_volume ?? 0),
+    reserveAfterPlanDays: Number(payload.sroa?.reserve_after_plan_days ?? 0),
+    safetyThresholdBreached: Boolean(payload.sroa?.safety_threshold_breached),
+    sanityStatus: String(payload.sroa?.sanity_check?.status ?? ""),
+    summary: String(payload.sroa?.summary ?? ""),
+  },
+  recommendation: String(payload.recommendation ?? ""),
+});
+
 const LiveMap = () => {
   const { vessels, status } = useVesselStream();
   const {
@@ -61,6 +96,7 @@ const LiveMap = () => {
     computeImpact,
   } = useSimulation();
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [agentAnalyses, setAgentAnalyses] = useState<Record<string, AgentZoneAnalysis>>({});
 
   const tankerCount = useMemo(() => vessels.reduce((count, v) => count + (v.isTanker ? 1 : 0), 0), [vessels]);
   const affectedVessels = useMemo(
@@ -74,21 +110,88 @@ const LiveMap = () => {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  const analyzeZoneWithAgents = useCallback(
+    async (zone: TensionZone) => {
+      const zoneVessels = vessels.filter((vessel) => pointInPolygon([vessel.lon, vessel.lat], zone.polygon));
+      setAgentAnalyses((current) => ({
+        ...current,
+        [zone.id]: { status: "loading", message: "GRIA, DSM, and SROA are analyzing this zone." },
+      }));
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/map/analyze-zone`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            zoneId: zone.id,
+            zoneName: zone.name,
+            polygon: zone.polygon,
+            corridorId: zone.corridorId,
+            corridorName: corridorLabel(zone.corridorId),
+            tensionPct: zone.tensionPct,
+            durationDays: zone.durationDays,
+            affectedVesselCount: zoneVessels.length,
+            affectedTankers: zoneVessels.filter((vessel) => vessel.isTanker).length,
+          }),
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || payload.error || "Agent analysis failed");
+        }
+
+        setAgentAnalyses((current) => ({
+          ...current,
+          [zone.id]: summarizeAgentResponse(payload),
+        }));
+      } catch (error) {
+        setAgentAnalyses((current) => ({
+          ...current,
+          [zone.id]: {
+            status: "error",
+            message: error instanceof Error ? error.message : "Agent analysis failed",
+          },
+        }));
+      }
+    },
+    [vessels]
+  );
+
   const handlePreset = useCallback(
     (preset: PresetKey) => {
       const config = presetPolygons[preset];
-      addZone(config.polygon, matchCorridorToZone(config.polygon), config.tensionPct, config.durationDays);
+      const corridorId = matchCorridorToZone(config.polygon);
+      const zoneId = addZone(config.polygon, corridorId, config.tensionPct, config.durationDays);
       setIsDrawing(false);
+      void analyzeZoneWithAgents({
+        id: zoneId,
+        name: "Preset zone",
+        polygon: config.polygon,
+        corridorId,
+        tensionPct: config.tensionPct,
+        durationDays: config.durationDays,
+        createdAt: Date.now(),
+      });
     },
-    [addZone, setIsDrawing]
+    [addZone, analyzeZoneWithAgents, setIsDrawing]
   );
 
   const handleZoneDrawn = useCallback(
     (polygon: number[][]) => {
-      addZone(polygon, matchCorridorToZone(polygon), 50, 14);
+      const corridorId = matchCorridorToZone(polygon);
+      const zoneId = addZone(polygon, corridorId, 50, 14);
       setIsDrawing(false);
+      void analyzeZoneWithAgents({
+        id: zoneId,
+        name: "Drawn zone",
+        polygon,
+        corridorId,
+        tensionPct: 50,
+        durationDays: 14,
+        createdAt: Date.now(),
+      });
     },
-    [addZone, setIsDrawing]
+    [addZone, analyzeZoneWithAgents, setIsDrawing]
   );
 
   const statusPill =
@@ -143,15 +246,27 @@ const LiveMap = () => {
             isDrawing={isDrawing}
             onToggleDrawing={() => setIsDrawing(!isDrawing)}
             onPreset={handlePreset}
-            onClearAll={clearAllZones}
+            onClearAll={() => {
+              clearAllZones();
+              setAgentAnalyses({});
+            }}
             hasZones={zones.length > 0}
           />
           <TensionZonePanel
             zones={zones}
             impact={impact}
+            agentAnalyses={agentAnalyses}
+            onAnalyzeZone={analyzeZoneWithAgents}
             onSetTension={setZoneTension}
             onSetDuration={setZoneDuration}
-            onRemoveZone={removeZone}
+            onRemoveZone={(id) => {
+              removeZone(id);
+              setAgentAnalyses((current) => {
+                const next = { ...current };
+                delete next[id];
+                return next;
+              });
+            }}
           />
         </div>
       </main>

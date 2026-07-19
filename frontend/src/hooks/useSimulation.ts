@@ -11,6 +11,29 @@ export interface TensionZone {
   createdAt: number;
 }
 
+export interface AgentZoneAnalysis {
+  status: "loading" | "ready" | "error";
+  message?: string;
+  corridor?: string;
+  generatedAt?: string;
+  griaMatches?: number;
+  dsm?: {
+    capacityLossPct: number;
+    durationDays: number;
+    severityEvents: number;
+    summary: string;
+  };
+  sroa?: {
+    policy: string;
+    totalReleasedVolume: number;
+    reserveAfterPlanDays: number;
+    safetyThresholdBreached: boolean;
+    sanityStatus: string;
+    summary: string;
+  };
+  recommendation?: string;
+}
+
 export interface SimulationState {
   zones: TensionZone[];
   isDrawing: boolean;
@@ -91,13 +114,14 @@ export const useSimulation = () => {
 
   const addZone = useCallback(
     (polygon: number[][], corridorId: string | null, tensionPct: number, durationDays: number) => {
+      const id = createZoneId();
       setZones((currentZones) => {
         const name = `Zone ${ZONE_NAMES[currentZones.length % ZONE_NAMES.length]}`;
 
         return [
           ...currentZones,
           {
-            id: createZoneId(),
+            id,
             name,
             polygon,
             corridorId,
@@ -107,6 +131,7 @@ export const useSimulation = () => {
           },
         ];
       });
+      return id;
     },
     []
   );

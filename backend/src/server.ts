@@ -10,6 +10,7 @@ import "./config/firebase";
 import griaRoutes from "./agents/gria/routes";
 import dsmRoutes from "./agents/dsm/routes";
 import sroaRoutes from "./agents/sroa/routes";
+import mapRoutes from "./agents/map/routes";
 import authRoutes from "./routes/authRoutes";
 import { bootstrapGria } from "./agents/gria/bootstrap";
 import nationalStateRoutes from "./agents/shared/nationalStateRoutes";
@@ -34,6 +35,7 @@ app.use("/api", nationalStateRoutes);
 app.use("/api", livePriceRoutes);
 app.use("/api/dsm", dsmRoutes);
 app.use("/api/sroa", sroaRoutes);
+app.use("/api/map", mapRoutes);
 
 // Module routers get mounted here as each teammate builds their layer, e.g.:
 // app.use("/api/gria", griaRoutes);
