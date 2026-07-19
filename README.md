@@ -24,9 +24,13 @@ cd backend
 cp .env.example .env
 # paste your MongoDB URI and Firebase service account values into .env
 npm install
+python -m pip install -r requirements.txt
 npm run dev
 ```
 Runs on `http://localhost:5000`.
+
+GRIA's local Gemma worker uses `llama-cpp-python`. If it is installed in a virtual environment,
+set `PYTHON_BIN` in `backend/.env` to that environment's Python executable.
 
 ### 3. Frontend
 ```bash

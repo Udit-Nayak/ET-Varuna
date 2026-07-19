@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Mapping
-
-from llama_cpp import Llama
+from typing import TYPE_CHECKING, Any, Mapping
 
 from prompt import build_prompt
+
+if TYPE_CHECKING:
+    from llama_cpp import Llama
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "ai_models" / "gemma-2-2b-it" / "gemma-2-2b-it-Q4_K_M.gguf"
@@ -18,6 +19,18 @@ _LLM: Llama | None = None
 def get_llm() -> Llama:
     global _LLM
     if _LLM is None:
+        try:
+            from llama_cpp import Llama
+        except ModuleNotFoundError as error:
+            raise RuntimeError(
+                "Missing Python dependency 'llama_cpp'. Install backend Python dependencies with "
+                "'python -m pip install -r requirements.txt' from the backend directory, or set "
+                "PYTHON_BIN to the Python environment where llama-cpp-python is installed."
+            ) from error
+
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(f"Gemma GGUF model not found at {MODEL_PATH}")
+
         print("Loading Gemma model...", file=sys.stderr)
         _LLM = Llama(
             model_path=str(MODEL_PATH),

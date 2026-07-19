@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import fs from "fs";
 import path from "path";
 
 export interface HuggingFaceInferenceRequest {
@@ -11,12 +12,25 @@ export interface HuggingFaceInferenceRequest {
   };
 }
 
-const PYTHON_SCRIPT = path.resolve(__dirname, "model.py");
-const PYTHON_BIN = process.env.PYTHON_BIN || "python";
+const AGENT_DIR = path.resolve(process.cwd(), "src", "agents", "gria");
+const PYTHON_SCRIPT = path.join(AGENT_DIR, "model.py");
+
+const resolvePythonBin = (): string => {
+  if (process.env.PYTHON_BIN) {
+    return process.env.PYTHON_BIN;
+  }
+
+  const localVenvPython = process.platform === "win32"
+    ? path.join(AGENT_DIR, ".venv", "Scripts", "python.exe")
+    : path.join(AGENT_DIR, ".venv", "bin", "python");
+
+  return fs.existsSync(localVenvPython) ? localVenvPython : "python";
+};
 
 let workerReadyPromise: Promise<void> | null = null;
 let workerProcess: ReturnType<typeof spawn> | null = null;
 let workerBuffer = "";
+let activeReject: ((reason?: unknown) => void) | null = null;
 let workerRequestQueue: Array<{
   payload: string;
   resolve: (value: unknown) => void;
@@ -41,8 +55,8 @@ const ensureWorker = (): Promise<void> => {
   }
 
   workerReadyPromise = new Promise((resolve, reject) => {
-    workerProcess = spawn(PYTHON_BIN, [PYTHON_SCRIPT], {
-      cwd: path.dirname(PYTHON_SCRIPT),
+    workerProcess = spawn(resolvePythonBin(), [PYTHON_SCRIPT], {
+      cwd: AGENT_DIR,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -51,11 +65,16 @@ const ensureWorker = (): Promise<void> => {
       process.stderr.write(chunk);
     });
     workerProcess.on("exit", (code) => {
+      const error = new Error(`Gemma worker exited${code ? ` with code ${code}` : ""}`);
       workerReadyPromise = null;
       workerProcess = null;
       workerBuffer = "";
+      activeReject?.(error);
+      activeReject = null;
+      workerRequestQueue.splice(0).forEach((request) => request.reject(error));
+      workerBusy = false;
       if (code && code !== 0) {
-        reject(new Error(`Gemma worker exited with code ${code}`));
+        reject(error);
       }
     });
 
@@ -76,6 +95,7 @@ const pumpQueue = (): void => {
   }
 
   workerBusy = true;
+  activeReject = current.reject;
   const onData = (chunk: Buffer) => {
     workerBuffer += chunk.toString("utf8");
     const newlineIndex = workerBuffer.indexOf("\n");
@@ -97,6 +117,7 @@ const pumpQueue = (): void => {
       current.reject(error);
     } finally {
       workerProcess?.stdout?.off("data", onData);
+      activeReject = null;
       workerBusy = false;
       pumpQueue();
     }
