@@ -129,7 +129,7 @@ className={`pointer-events-auto absolute right-3 top-3 z-20 max-h-[calc(100%-1.5
                 disabled={agentAnalyses[zone.id]?.status === "loading"}
                 onClick={() => onAnalyzeZone(zone)}
               >
-                {agentAnalyses[zone.id]?.status === "loading" ? "Agents analyzing..." : "Run GRIA + DSM + SROA"}
+                {agentAnalyses[zone.id]?.status === "loading" ? "Agents analyzing..." : "Run GRIA + DSM + SROA + APO"}
               </button>
 
               <AgentAnalysisBlock analysis={agentAnalyses[zone.id]} />
@@ -228,6 +228,9 @@ const AgentAnalysisBlock = ({ analysis }: { analysis?: AgentZoneAnalysis }) => {
   return (
     <div className="mt-3 space-y-2 rounded border border-border/80 bg-base/60 p-2">
       <div className="font-semibold text-ink">Agent Result</div>
+      {analysis.zoneGeometry && (
+        <div>Zone: <span className="text-ink">{analysis.zoneGeometry.pointCount} pts</span> · <span className="text-ink">{analysis.zoneGeometry.areaSqKm.toLocaleString("en-US")} km²</span></div>
+      )}
       <div>GRIA matches: <span className="text-ink">{analysis.griaMatches ?? 0}</span></div>
       {analysis.dsm && (
         <div>
@@ -248,6 +251,23 @@ const AgentAnalysisBlock = ({ analysis }: { analysis?: AgentZoneAnalysis }) => {
             {analysis.sroa.safetyThresholdBreached ? "Safety threshold breached" : "Safety threshold protected"}
           </div>
         </>
+      )}
+      {analysis.apo && analysis.apo.topOptions.length > 0 && (
+        <div className="border-t border-border/70 pt-2">
+          <div className="mb-1 font-semibold text-ink">APO procurement ranking</div>
+          <div className="text-ink">Need: {formatVolume(analysis.apo.totalVolumeNeeded)}</div>
+          <div className="mt-1 space-y-1">
+            {analysis.apo.topOptions.map((option, index) => (
+              <div key={index} className="rounded border border-border/60 bg-surface/40 p-2">
+                <div className="text-ink">#{index + 1} {option.supplierName}</div>
+                <div className="truncate">{option.route}</div>
+                <div>Cost <span className="text-ink">USD {option.landedCostPerBarrel.toFixed(2)}/bbl</span> · Transit <span className="text-ink">{option.transitDays}d</span></div>
+                <div>Route risk <span className="text-ink">{option.routeRiskScore.toFixed(0)}/100</span> · Covers <span className="text-ink">{formatVolume(option.volumeOffered)}</span></div>
+              </div>
+            ))}
+          </div>
+          {analysis.apo.llmFlags.length > 0 && <div className="mt-1 text-[#FF8A8A]">{analysis.apo.llmFlags[0]}</div>}
+        </div>
       )}
       {analysis.recommendation && <div className="border-t border-border/70 pt-2 text-ink">{analysis.recommendation}</div>}
     </div>
