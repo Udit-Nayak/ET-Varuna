@@ -40,6 +40,11 @@ const formatUsd = (value: unknown) => {
 };
 
 const formatApoPayload = (apo: any) => {
+  if (typeof apo?.formatted_recommendation === "string" && apo.formatted_recommendation.trim()) {
+    const providerLine = apo.llm_used ? `\n\nFormatted by ${apo.llm_provider ?? "LLM"}.` : "";
+    return `${apo.formatted_recommendation.trim()}${providerLine}`;
+  }
+
   const options = Array.isArray(apo?.ranked_options) ? apo.ranked_options.slice(0, 3) : [];
   const totalNeeded = Number(apo?.total_volume_needed ?? 0);
   if (options.length === 0) {
