@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MapLibreMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { corridors } from "../data/corridors";
@@ -224,6 +224,14 @@ interface VesselMapProps {
   isDrawing: boolean;
   status: StreamStatus;
   onZoneDrawn: (coordinates: number[][]) => void;
+  backgroundMode?: boolean;
+  interactive?: boolean;
+  compact?: boolean;
+  className?: string;
+}
+
+export interface VesselMapHandle {
+  resize: () => void;
 }
 
 const statusMeta: Record<StreamStatus, { label: string; dot: string; text: string }> = {
@@ -233,9 +241,26 @@ const statusMeta: Record<StreamStatus, { label: string; dot: string; text: strin
   offline: { label: "OFFLINE", dot: "bg-risk", text: "text-risk" },
 };
 
-const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneDrawn }: VesselMapProps) => {
+const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
+  (
+    {
+      vessels,
+      zones,
+      affectedVessels,
+      isDrawing,
+      status,
+      onZoneDrawn,
+      backgroundMode = false,
+      interactive = !backgroundMode,
+      compact = false,
+      className = "",
+    },
+    ref
+  ) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const navControlRef = useRef<maplibregl.NavigationControl | null>(null);
+  const interactionRef = useRef({ interactive, backgroundMode, onZoneDrawn });
   const loadedRef = useRef(false);
   const draftPointsRef = useRef<[number, number][]>([]);
   const [selectedVessel, setSelectedVessel] = useState<SelectedVesselDetails | null>(null);
@@ -250,6 +275,22 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
     () => vessels.reduce((latest, vessel) => Math.max(latest, vessel.lastUpdate), 0),
     [vessels]
   );
+
+  useImperativeHandle(ref, () => ({
+    resize: () => mapRef.current?.resize(),
+  }));
+
+  useEffect(() => {
+    interactionRef.current = { interactive, backgroundMode, onZoneDrawn };
+    if (!interactive) draftPointsRef.current = [];
+  }, [backgroundMode, interactive, onZoneDrawn]);
+
+  useEffect(() => {
+    if (compact) {
+      setInspectorOpen(false);
+      setLegendOpen(false);
+    }
+  }, [compact]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(Date.now()), 30000);
@@ -268,7 +309,6 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
     });
 
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
 
     map.on("load", () => {
       map.addSource("corridors", {
@@ -595,6 +635,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
 
       const bindPopup = (layerId: string, html: (props: any) => string) => {
         map.on("mouseenter", layerId, (e) => {
+          if (!interactionRef.current.interactive || interactionRef.current.backgroundMode) return;
           if (draftPointsRef.current.length > 0) return;
           map.getCanvas().style.cursor = "pointer";
           const feature = e.features?.[0];
@@ -638,6 +679,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       </div>`);
 
       map.on("click", "vessels-symbol", (e) => {
+        if (!interactionRef.current.interactive || interactionRef.current.backgroundMode) return;
         if (draftPointsRef.current.length > 0) return;
         const props = e.features?.[0]?.properties;
         if (!props) return;
@@ -671,6 +713,26 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       setMapReady(false);
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (!interactive || backgroundMode) {
+      draftPointsRef.current = [];
+      return;
+    }
+
+    if (interactive && !backgroundMode && !navControlRef.current) {
+      const control = new maplibregl.NavigationControl();
+      map.addControl(control, "top-right");
+      navControlRef.current = control;
+    }
+
+    if ((!interactive || backgroundMode) && navControlRef.current) {
+      map.removeControl(navControlRef.current);
+      navControlRef.current = null;
+    }
+  }, [backgroundMode, interactive, mapReady]);
 
   // ---- Custom draw interaction ----
   useEffect(() => {
@@ -722,7 +784,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       const pts = dedupeClose(draftPointsRef.current);
       draftPointsRef.current = [];
       updateDraftSource();
-      if (pts.length >= 3) onZoneDrawn(pts);
+      if (pts.length >= 3) interactionRef.current.onZoneDrawn(pts);
     };
 
     const cancelDraft = () => {
@@ -770,7 +832,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       map.off("dblclick", handleDblClick);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isDrawing, mapReady, onZoneDrawn]);
+  }, [backgroundMode, interactive, isDrawing, mapReady]);
 
   // ---- Tension zone layers ----
   useEffect(() => {
@@ -852,8 +914,14 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
   const meta = statusMeta[status];
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg border border-border bg-base">
-      <div ref={containerRef} className="h-full w-full" />
+    <div
+      className={`relative h-full w-full overflow-hidden bg-base ${
+        backgroundMode ? "" : "rounded-lg border border-border"
+      } ${className}`}
+    >
+      <div ref={containerRef} className={`h-full w-full ${backgroundMode ? "pointer-events-none" : ""}`} />
+
+      {backgroundMode && <div className="pointer-events-none absolute inset-0 z-10 bg-base/70" />}
 
       {!mapReady && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-base">
@@ -864,14 +932,15 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
         </div>
       )}
 
-      {isDrawing && (
+      {interactive && !backgroundMode && isDrawing && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-amber/40 bg-surface/95 px-4 py-1.5 font-mono text-[11px] text-amber shadow-lg backdrop-blur">
           Click to place points · click first point or double-click to finish · Esc to cancel
         </div>
       )}
 
       {/* Inspector: connection + fleet counts + selected vessel */}
-      <div className="pointer-events-auto absolute left-3 top-3 z-10 w-72 overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur">
+      {interactive && !backgroundMode && (
+      <div className={`pointer-events-auto absolute left-3 top-3 z-20 overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur ${compact ? "w-14" : "w-72"}`}>
         <button
           type="button"
           onClick={() => setInspectorOpen((v) => !v)}
@@ -879,12 +948,12 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
         >
           <div className="flex items-center gap-2">
             <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${status === "live" ? "animate-pulseDot" : ""}`} />
-            <span className={`text-xs font-semibold tracking-wider ${meta.text}`}>{meta.label}</span>
+            {!compact && <span className={`text-xs font-semibold tracking-wider ${meta.text}`}>{meta.label}</span>}
           </div>
           <span className="text-muted">{inspectorOpen ? "▾" : "▸"}</span>
         </button>
 
-        {inspectorOpen && (
+        {inspectorOpen && !compact && (
           <div className="border-t border-border/80 px-3 pb-3 pt-2.5">
             <div className="mb-2 text-[10px] text-muted">Last update: {latestUpdate ? formatLastUpdate(latestUpdate) : "waiting"}</div>
 
@@ -944,14 +1013,16 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
           </div>
         )}
       </div>
+      )}
 
       {/* Legend chip */}
-      <div className="pointer-events-auto absolute bottom-3 left-3 z-10 overflow-hidden rounded-md border border-border bg-surface/90 font-mono text-[10px] text-muted backdrop-blur">
+      {interactive && !backgroundMode && (
+      <div className={`pointer-events-auto absolute bottom-3 left-3 z-20 overflow-hidden rounded-md border border-border bg-surface/90 font-mono text-[10px] text-muted backdrop-blur ${compact ? "max-w-14" : ""}`}>
         <button type="button" onClick={() => setLegendOpen((v) => !v)} className="flex items-center gap-2 px-3 py-2">
-          <span>LEGEND</span>
+          <span>{compact ? "L" : "LEGEND"}</span>
           <span>{legendOpen ? "▾" : "▸"}</span>
         </button>
-        {legendOpen && (
+        {legendOpen && !compact && (
           <div className="flex flex-col gap-1.5 border-t border-border/80 px-3 pb-3 pt-2">
             <LegendRow color="#D64545" label="High-risk corridor" />
             <LegendRow color={facilityColor.refinery} label="Refinery" />
@@ -965,9 +1036,11 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
           </div>
         )}
       </div>
+      )}
     </div>
   );
-};
+  }
+);
 
 const LegendRow = ({ color, label }: { color: string; label: string }) => (
   <div className="flex items-center gap-2">
