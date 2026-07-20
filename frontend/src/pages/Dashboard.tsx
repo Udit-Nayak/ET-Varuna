@@ -1,116 +1,266 @@
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
-import ModuleCard from "../components/ModuleCard";
-import { ModuleMeta } from "../types";
-import { Link } from "react-router-dom"; // add to imports at top
+import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Navbar from "../components/layout/Navbar";
+import TensionDrawer from "../components/TensionDrawer";
+import VesselMap, { VesselMapHandle } from "../components/VesselMap";
+import AgentHero from "../components/workspace/AgentHero";
+import AgentShowcase from "../components/workspace/AgentShowcase";
+import DissolveOverlay from "../components/workspace/DissolveOverlay";
+import SplitWorkspace from "../components/workspace/SplitWorkspace";
+import { corridorLabel, useAgentWorkflowChat } from "../hooks/useAgentWorkflowChat";
+import { matchCorridorToZone, TensionZone, useSimulation } from "../hooks/useSimulation";
+import { useScrollPhase } from "../hooks/useScrollPhase";
+import { useSplitRatio } from "../hooks/useSplitRatio";
+import { useVesselStream } from "../hooks/useVesselStream";
+import { pointInPolygon } from "../utils/geo";
 
-const modules: ModuleMeta[] = [
-  {
-    code: "GRIA",
-    name: "Geopolitical Risk Intelligence Agent",
-    description:
-      "Multi-source risk scoring per corridor from news, AIS, sanctions, and price signals.",
-    status: "idle",
+const NAV_HEIGHT = 65;
+
+const presetPolygons = {
+  hormuz: {
+    polygon: [
+      [56.0, 26.5],
+      [57.5, 26.5],
+      [57.5, 27.5],
+      [56.0, 27.5],
+    ],
+    tensionPct: 75,
+    durationDays: 14,
   },
-  {
-    code: "DSM",
-    name: "Disruption Scenario Modeller",
-    description: "Simulates specific disruption events and their cascading downstream impact.",
-    status: "idle",
+  "red-sea": {
+    polygon: [
+      [42.0, 11.5],
+      [44.0, 11.5],
+      [44.0, 13.0],
+      [42.0, 13.0],
+    ],
+    tensionPct: 60,
+    durationDays: 21,
   },
-  {
-    code: "APO",
-    name: "Adaptive Procurement Orchestrator",
-    description: "Ranks alternate sourcing and logistics routes when a corridor is disrupted.",
-    status: "idle",
+  "full-gulf": {
+    polygon: [
+      [48.0, 24.0],
+      [58.0, 24.0],
+      [58.0, 30.0],
+      [48.0, 30.0],
+    ],
+    tensionPct: 90,
+    durationDays: 7,
   },
-  {
-    code: "SROA",
-    name: "Strategic Reserve Optimisation Agent",
-    description: "Models optimal reserve drawdown schedules against supply gap forecasts.",
-    status: "idle",
-  },
-  {
-    code: "SCDT",
-    name: "Supply Chain Digital Twin",
-    description: "Geospatial simulation of the full energy network for live what-if analysis.",
-    status: "idle",
-  },
-  {
-    code: "TFM",
-    name: "Transaction Flow Monitor",
-    description:
-      "Tracks incoming/outgoing fuel transactions to verify how disruptions are being covered.",
-    status: "idle",
-  },
-];
+};
+
+type PresetKey = keyof typeof presetPolygons;
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { vessels, status } = useVesselStream();
+  const {
+    zones,
+    isDrawing,
+    addZone,
+    removeZone,
+    clearAllZones,
+    setZoneTension,
+    setZoneDuration,
+    setIsDrawing,
+    computeImpact,
+  } = useSimulation();
+  const {
+    phase,
+    setPhase,
+    showcaseProgress,
+    setShowcaseProgress,
+    startWorkspaceTransition,
+    completeWorkspaceTransition,
+  } = useScrollPhase();
+  const chat = useAgentWorkflowChat();
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<VesselMapHandle>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const split = useSplitRatio(workspaceRef);
+  const [mapPaneWidth, setMapPaneWidth] = useState(0);
+  const [chatPaneWidth, setChatPaneWidth] = useState(0);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate("/", { replace: true });
-  };
+  const isWorkspace = phase === "workspace";
+  const mapCompact = isWorkspace && (split.ratio < 30 || mapPaneWidth < 420);
+  const chatCompact = isWorkspace && (100 - split.ratio < 30 || chatPaneWidth < 360);
+  const impact = useMemo(() => computeImpact(), [computeImpact]);
+  const affectedVessels = useMemo(
+    () => vessels.filter((vessel) => zones.some((zone) => pointInPolygon([vessel.lon, vessel.lat], zone.polygon))).map((vessel) => vessel.mmsi),
+    [vessels, zones]
+  );
 
-  const displayName = user?.displayName || user?.email?.split("@")[0] || "Operator";
+  const requestMapResize = useCallback(() => {
+    if (resizeFrameRef.current !== null) return;
+    resizeFrameRef.current = window.requestAnimationFrame(() => {
+      resizeFrameRef.current = null;
+      mapRef.current?.resize();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isWorkspace) return;
+    requestMapResize();
+  }, [isWorkspace, requestMapResize, split.ratio]);
+
+  useEffect(
+    () => () => {
+      if (resizeFrameRef.current !== null) window.cancelAnimationFrame(resizeFrameRef.current);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!workspaceRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      setMapPaneWidth((width * split.ratio) / 100);
+      setChatPaneWidth((width * (100 - split.ratio)) / 100);
+      requestMapResize();
+    });
+
+    observer.observe(workspaceRef.current);
+    return () => observer.disconnect();
+  }, [requestMapResize, split.ratio]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (phase === "transitioning" || phase === "workspace") return;
+      const nextPhase = window.scrollY > window.innerHeight * 0.75 ? "showcase" : "hero";
+      setPhase(nextPhase);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [phase, setPhase]);
+
+  const analyzeZone = useCallback(
+    (zone: TensionZone) => {
+      void chat.analyzeZoneWithAgents(zone, vessels);
+    },
+    [chat, vessels]
+  );
+
+  const handlePreset = useCallback(
+    (preset: PresetKey) => {
+      const config = presetPolygons[preset];
+      const corridorId = matchCorridorToZone(config.polygon);
+      const zoneId = addZone(config.polygon, corridorId, config.tensionPct, config.durationDays);
+      setIsDrawing(false);
+      analyzeZone({
+        id: zoneId,
+        name: "Preset zone",
+        polygon: config.polygon,
+        corridorId,
+        tensionPct: config.tensionPct,
+        durationDays: config.durationDays,
+        createdAt: Date.now(),
+      });
+    },
+    [addZone, analyzeZone, setIsDrawing]
+  );
+
+  const handleZoneDrawn = useCallback(
+    (polygon: number[][]) => {
+      const corridorId = matchCorridorToZone(polygon);
+      const zoneId = addZone(polygon, corridorId, 50, 14);
+      setIsDrawing(false);
+      analyzeZone({
+        id: zoneId,
+        name: `Drawn zone - ${corridorLabel(corridorId)}`,
+        polygon,
+        corridorId,
+        tensionPct: 50,
+        durationDays: 14,
+        createdAt: Date.now(),
+      });
+    },
+    [addZone, analyzeZone, setIsDrawing]
+  );
+
+  const mapTarget = isWorkspace
+    ? {
+        left: "0%",
+        width: `${split.ratio}%`,
+        opacity: 1,
+      }
+    : {
+        left: "0%",
+        width: "100%",
+        opacity: showcaseProgress > 0 ? 0.78 : 0.68,
+      };
 
   return (
     <div className="min-h-screen bg-base text-ink">
-      <header className="sticky top-0 z-10 border-b border-border bg-base/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
-            <span className="font-display text-lg font-semibold tracking-tight">Aegis SCR</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="hidden font-mono text-xs text-muted sm:inline">
-              {user?.email}
-            </span>
-            <Link
-  to="/live-map"
-  className="rounded-md border border-amber/40 px-4 py-2 font-mono text-xs uppercase tracking-wider text-amber transition-colors hover:bg-amber/10"
->
-  Live Map
-</Link>
-            <button
-              onClick={handleLogout}
-              className="rounded-md border border-border px-4 py-2 font-mono text-xs uppercase tracking-wider text-ink transition-colors hover:border-risk hover:text-risk"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
+      <Navbar />
 
-      <main className="mx-auto max-w-6xl px-6 py-10">
-        <div className="mb-8">
-          <span className="font-mono text-[11px] uppercase tracking-widest text-amber">
-            Welcome back
-          </span>
-          <h1 className="mt-2 font-display text-2xl font-semibold tracking-tight">
-            {displayName}'s dashboard
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted">
-            This is the shared foundation shell — auth is wired up and every module has a slot.
-            Each teammate builds inside their layer without touching this structure.
-          </p>
-        </div>
+      <motion.div
+        className={`fixed ${isWorkspace ? "z-20 pointer-events-auto" : "z-0 pointer-events-none"}`}
+        style={{ top: NAV_HEIGHT, bottom: 0 }}
+        animate={mapTarget}
+        transition={{ duration: 0.55, ease: "easeInOut" }}
+        onAnimationComplete={requestMapResize}
+      >
+        <VesselMap
+          ref={mapRef}
+          vessels={vessels}
+          zones={zones}
+          affectedVessels={affectedVessels}
+          isDrawing={isWorkspace && isDrawing}
+          status={status}
+          onZoneDrawn={handleZoneDrawn}
+          backgroundMode={!isWorkspace}
+          interactive={isWorkspace}
+          compact={mapCompact}
+          className={isWorkspace ? "rounded-none border-0" : ""}
+        />
+        {isWorkspace && (
+          <TensionDrawer
+            isDrawing={isDrawing}
+            onToggleDrawing={() => setIsDrawing(!isDrawing)}
+            onPreset={handlePreset}
+            onClearAll={clearAllZones}
+            hasZones={zones.length > 0}
+          />
+        )}
+      </motion.div>
 
-        <div className="mb-6 flex items-center gap-3 rounded-lg border border-border bg-surface/60 px-4 py-3">
-          <span className="h-1.5 w-1.5 rounded-full bg-muted" />
-          <span className="font-mono text-xs text-muted">
-            0 / 6 modules connected — this is expected at this stage.
-          </span>
-        </div>
+      <AnimatePresence mode="wait">
+        {(phase === "hero" || phase === "showcase") && (
+          <DissolveOverlay key="story" onExitComplete={completeWorkspaceTransition}>
+            <AgentHero onUseMe={startWorkspaceTransition} />
+            <AgentShowcase onProgressChange={setShowcaseProgress} />
+          </DissolveOverlay>
+        )}
+      </AnimatePresence>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {modules.map((m) => (
-            <ModuleCard key={m.code} {...m} />
-          ))}
-        </div>
-      </main>
+      {isWorkspace && (
+        <motion.main
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35, delay: 0.08 }}
+          className="pointer-events-none relative z-30"
+        >
+          <SplitWorkspace
+            containerRef={workspaceRef}
+            ratio={split.ratio}
+            isDragging={split.isDragging}
+            onDividerPointerDown={split.onPointerDown}
+            chatCompact={chatCompact}
+            messages={chat.messages}
+            isBusy={chat.isBusy}
+            zones={zones}
+            impact={impact}
+            onAskQuestion={chat.askQuestion}
+            onClearChat={chat.clearMessages}
+            onAnalyzeZone={analyzeZone}
+            onSetTension={setZoneTension}
+            onSetDuration={setZoneDuration}
+            onRemoveZone={removeZone}
+          />
+        </motion.main>
+      )}
     </div>
   );
 };
