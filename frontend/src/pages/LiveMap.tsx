@@ -82,7 +82,14 @@ const summarizeAgentResponse = (payload: any): AgentZoneAnalysis => ({
   recommendation: String(payload.recommendation ?? ""),
 });
 
-const LiveMap = () => {
+interface LiveMapProps {
+  embedded?: boolean;
+  controlsVisible?: boolean;
+  controlsDelayMs?: number;
+  interactive?: boolean;
+}
+
+export const LiveMapSurface = ({ embedded = false, controlsVisible = true, controlsDelayMs = 0, interactive = true }: LiveMapProps) => {
   const { vessels, status } = useVesselStream();
   const {
     zones,
@@ -203,8 +210,9 @@ const LiveMap = () => {
       ? { label: "OFFLINE", cls: "border-risk/50 bg-risk/10 text-risk" }
       : { label: "CONNECTING", cls: "border-border bg-surface text-muted" };
 
-  return (
-    <div className="flex h-screen flex-col bg-base text-ink">
+  const content = (
+    <>
+      {!embedded && (
       <header className="border-b border-border bg-base/90 px-6 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -222,7 +230,9 @@ const LiveMap = () => {
           </Link>
         </div>
       </header>
+      )}
 
+      {!embedded && (
       <section className="border-b border-border bg-surface/80 px-6 py-3">
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-3 font-mono text-xs text-muted md:grid-cols-4">
           <StatCard label="Total vessels" value={vessels.length} />
@@ -231,48 +241,73 @@ const LiveMap = () => {
           <StatCard label="UTC time" value={formatUtcTime(currentTime)} />
         </div>
       </section>
+      )}
 
-      <main className="mx-auto min-h-0 w-full max-w-7xl flex-1 px-6 py-6">
+      <main className={embedded ? "relative h-full w-full" : "mx-auto min-h-0 w-full max-w-7xl flex-1 px-6 py-6"}>
         <div className="relative h-full min-h-0">
           <VesselMap
             vessels={vessels}
             zones={zones}
             affectedVessels={affectedVessels}
             isDrawing={isDrawing}
+            interactive={interactive}
+            controlsVisible={controlsVisible}
+            controlsDelayMs={controlsDelayMs}
             status={status}
             onZoneDrawn={handleZoneDrawn}
           />
-          <TensionDrawer
-            isDrawing={isDrawing}
-            onToggleDrawing={() => setIsDrawing(!isDrawing)}
-            onPreset={handlePreset}
-            onClearAll={() => {
-              clearAllZones();
-              setAgentAnalyses({});
-            }}
-            hasZones={zones.length > 0}
-          />
-          <TensionZonePanel
-            zones={zones}
-            impact={impact}
-            agentAnalyses={agentAnalyses}
-            onAnalyzeZone={analyzeZoneWithAgents}
-            onSetTension={setZoneTension}
-            onSetDuration={setZoneDuration}
-            onRemoveZone={(id) => {
-              removeZone(id);
-              setAgentAnalyses((current) => {
-                const next = { ...current };
-                delete next[id];
-                return next;
-              });
-            }}
-          />
+          <div
+            className={`transition-opacity duration-500 ${controlsVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
+            style={{ transitionDelay: `${controlsVisible ? controlsDelayMs : 0}ms` }}
+          >
+            {embedded && (
+              <div className="pointer-events-auto absolute left-[19.5rem] top-3 z-20">
+                <span className={`inline-flex items-center gap-2 rounded border bg-base/80 px-2 py-1 font-mono text-[10px] font-semibold backdrop-blur ${statusPill.cls}`}>
+                  <span className={`h-2 w-2 rounded-full ${status === "live" ? "animate-pulseDot" : ""}`} style={{ background: "currentColor" }} />
+                  {statusPill.label}
+                </span>
+              </div>
+            )}
+            <TensionDrawer
+              isDrawing={isDrawing}
+              onToggleDrawing={() => setIsDrawing(!isDrawing)}
+              onPreset={handlePreset}
+              onClearAll={() => {
+                clearAllZones();
+                setAgentAnalyses({});
+              }}
+              hasZones={zones.length > 0}
+            />
+            <TensionZonePanel
+              zones={zones}
+              impact={impact}
+              agentAnalyses={agentAnalyses}
+              onAnalyzeZone={analyzeZoneWithAgents}
+              onSetTension={setZoneTension}
+              onSetDuration={setZoneDuration}
+              onRemoveZone={(id) => {
+                removeZone(id);
+                setAgentAnalyses((current) => {
+                  const next = { ...current };
+                  delete next[id];
+                  return next;
+                });
+              }}
+            />
+          </div>
         </div>
       </main>
-    </div>
+    </>
+  );
+
+  return embedded ? (
+    <div className="h-full w-full bg-base text-ink">{content}</div>
+  ) : (
+    <div className="flex h-screen flex-col bg-base text-ink">{content}</div>
   );
 };
+
+const LiveMap = () => <LiveMapSurface />;
 
 const StatCard = ({ label, value, color }: { label: string; value: string | number; color?: string }) => (
   <div className="rounded border border-border bg-base/70 px-3 py-2">

@@ -27,6 +27,71 @@ body {
   outline-offset: 2px;
 }
 
+@keyframes priceTicker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-priceTicker {
+  animation: priceTicker 20s linear infinite;
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+}
+
+.ticker-cycle {
+  display: flex;
+  min-width: 100vw;
+  align-items: center;
+  justify-content: space-around;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+}
+
+/* The command/ticker strip belongs to the page flow, rather than the viewport. */
+header.fixed {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+header.fixed + div {
+  padding-top: 0 !important;
+}
+
+header.fixed > div:last-child {
+  height: 8.25rem;
+}
+
+header.fixed .ticker-cycle article {
+  width: 12.8125rem;
+  height: 7.25rem;
+  padding: 0.9rem;
+}
+
+header.fixed + div > section:first-child {
+  height: calc(100vh - 11.75rem) !important;
+}
+
+/* The greeting now lives in the fixed command header. */
+main.mx-auto.max-w-6xl > div.rounded-xl:first-child {
+  display: none;
+}
+
+.agent-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 650ms ease, transform 650ms ease;
+}
+
+.agent-reveal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
