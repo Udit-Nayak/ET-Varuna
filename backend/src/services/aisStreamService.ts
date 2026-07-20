@@ -60,6 +60,147 @@ const STALE_MS = 15 * 60 * 1000;
 const BROADCAST_INTERVAL_MS = 4000;
 const MAX_BROADCAST_VESSELS = 5000;
 
+const SIMULATED_ROUTES: [number, number][][] = [
+  // Route 1: Persian Gulf to Mumbai
+  [
+    [48.0, 29.0],
+    [50.0, 28.5],
+    [52.2, 27.8],
+    [54.7, 26.9],
+    [56.9, 27.0], // Hormuz
+    [59.0, 25.0],
+    [65.0, 21.0],
+    [72.5, 18.9]  // Mumbai
+  ],
+  // Route 2: Suez/Red Sea to Cochin
+  [
+    [32.58, 31.27], // Suez North
+    [32.53, 29.93], // Suez South
+    [34.0, 27.5],
+    [38.0, 20.0],
+    [42.0, 14.5],
+    [43.3, 12.5],  // Bab-el-Mandeb
+    [47.0, 11.5],
+    [55.0, 14.0],
+    [65.0, 12.0],
+    [76.2, 9.9]   // Cochin
+  ],
+  // Route 3: Singapore/Malacca to Chennai
+  [
+    [103.8, 1.2],   // Singapore
+    [101.4, 2.6],
+    [100.3, 3.8],
+    [98.6, 6.2],    // Malacca exit
+    [90.0, 7.5],
+    [80.3, 13.0],   // Chennai
+  ],
+  // Route 4: Cape of Good Hope to Mumbai
+  [
+    [18.0, -34.0],  // Cape of Good Hope
+    [30.0, -28.0],
+    [45.0, -16.0],
+    [60.0, 0.0],
+    [70.0, 10.0],
+    [72.5, 18.9]   // Mumbai
+  ],
+  // Route 5: Red Sea to Mumbai
+  [
+    [32.53, 29.93],
+    [34.0, 27.5],
+    [38.0, 20.0],
+    [42.0, 14.5],
+    [43.3, 12.5],
+    [47.0, 11.5],
+    [55.0, 14.0],
+    [65.0, 15.0],
+    [72.5, 18.9]   // Mumbai
+  ],
+  // Route 6: Persian Gulf to Chennai
+  [
+    [48.0, 29.0],
+    [50.0, 28.5],
+    [52.2, 27.8],
+    [54.7, 26.9],
+    [56.9, 27.0],
+    [59.0, 25.0],
+    [65.0, 15.0],
+    [75.0, 7.0],
+    [80.3, 13.0]   // Chennai
+  ]
+];
+
+interface SimulatedVessel {
+  mmsi: number;
+  name: string;
+  routeIndex: number;
+  progress: number;
+  speed: number;
+  isForward: boolean;
+  type: number;
+  callSign: string;
+  destination: string;
+  imoNumber: number;
+  draught: number;
+  isTanker: boolean;
+}
+
+function interpolatePath(path: [number, number][], progress: number): { lat: number; lon: number; bearing: number } {
+  const n = path.length;
+  if (n === 0) return { lat: 0, lon: 0, bearing: 0 };
+  if (n === 1) return { lat: path[0][1], lon: path[0][0], bearing: 0 };
+
+  const segments: number[] = [];
+  let totalDist = 0;
+  for (let i = 0; i < n - 1; i++) {
+    const p1 = path[i];
+    const p2 = path[i+1];
+    const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    segments.push(d);
+    totalDist += d;
+  }
+
+  let targetDist = progress * totalDist;
+  let currentDist = 0;
+  for (let i = 0; i < n - 1; i++) {
+    const d = segments[i];
+    if (currentDist + d >= targetDist) {
+      const ratio = d === 0 ? 0 : (targetDist - currentDist) / d;
+      const p1 = path[i];
+      const p2 = path[i+1];
+      const lon = p1[0] + (p2[0] - p1[0]) * ratio;
+      const lat = p1[1] + (p2[1] - p1[1]) * ratio;
+
+      const dLon = p2[0] - p1[0];
+      const dLat = p2[1] - p1[1];
+      let angle = Math.atan2(dLon, dLat) * (180 / Math.PI);
+      if (angle < 0) angle += 360;
+
+      return { lat, lon, bearing: angle };
+    }
+    currentDist += d;
+  }
+
+  const end = path[n - 1];
+  return { lat: end[1], lon: end[0], bearing: 0 };
+}
+
+const VESSEL_NAMES_TANKER = [
+  "MT INDUS STAR", "MARAN CENTAURUS", "AL-KHAFJI", "OCEAN LEOPARD", "BHARAT RATNA",
+  "SAURASHTRA QUEEN", "MT EVEREST", "PIONEER SPIRIT", "ARABIAN DISCOVERY", "GULF HORIZON",
+  "SWARNA KAMAL", "MT KANCHENJUNGA", "NEELKANTH", "DESH SHAKTI", "DESH VIRAT"
+];
+
+const VESSEL_NAMES_CARGO = [
+  "PACIFIC TRADER", "GOLDEN GATE", "SHANGHAI VOYAGER", "SINGAPORE FLIER", "CAPE PATRIOT",
+  "ATLANTIC RULER", "CMA CGM COROMANDEL", "MSC GOA", "MAERSK JAMNAGAR", "ORIENT CLIPPER",
+  "HALDIA PIONEER", "GANGA RIDER", "SINDHU EXPRESS", "CHENNAI EXPRESS", "VISHVA PREET"
+];
+
+const DESTINATIONS = [
+  "MUMBAI, IN", "NHAVA SHEVA, IN", "KOCHI, IN", "CHENNAI, IN", "SUEZ, EG",
+  "SINGAPORE, SG", "FUJAIRAH, AE", "ROTTERDAM, NL", "HORMUZ, IR", "BAB-EL-MANDEB"
+];
+
 class AisStreamService {
   private vessels = new Map<number, VesselState>();
   private staticDataByMmsi = new Map<number, StaticVesselData>();
@@ -67,21 +208,117 @@ class AisStreamService {
   private ws: WebSocket | null = null;
   private reconnectDelay = 2000;
   private lastCapWarningAt = 0;
+  private simulatedFleet: SimulatedVessel[] = [];
 
   // diagnostics
   private positionReportCount = 0;
   private staticDataCount = 0;
 
   start() {
+    this.initSimulatedFleet();
+
     const apiKey = process.env.AISSTREAM_API_KEY;
     if (!apiKey) {
-      console.warn("AISSTREAM_API_KEY not set — live vessel streaming disabled.");
-      return;
+      console.warn("AISSTREAM_API_KEY not set — operating in simulation mode only.");
+    } else {
+      this.connect(apiKey);
     }
-    this.connect(apiKey);
-    setInterval(() => this.broadcast(), BROADCAST_INTERVAL_MS);
+
+    // Periodically update simulated fleet and broadcast
+    setInterval(() => {
+      this.updateSimulatedFleet();
+      this.broadcast();
+    }, BROADCAST_INTERVAL_MS);
+
     setInterval(() => this.cleanupStale(), 60000);
     setInterval(() => this.logStats(), 15000);
+  }
+
+  private initSimulatedFleet() {
+    const totalSimulated = 80;
+    const mids = [419, 412, 563, 403, 461, 351, 338, 232]; // India, China, SG, Saudi, Oman, Panama, USA, UK
+
+    for (let i = 0; i < totalSimulated; i++) {
+      const isTanker = i % 2 === 0;
+      const routeIndex = i % SIMULATED_ROUTES.length;
+      const progress = 0.05 + Math.random() * 0.9;
+      const speed = 11 + Math.random() * 6; // 11-17 knots
+      const isForward = Math.random() > 0.5;
+
+      const mid = mids[i % mids.length];
+      const mmsi = mid * 1000000 + Math.floor(100000 + Math.random() * 899999);
+
+      const nameArray = isTanker ? VESSEL_NAMES_TANKER : VESSEL_NAMES_CARGO;
+      const name = nameArray[i % nameArray.length] + " " + (10 + Math.floor(Math.random() * 90));
+      const type = isTanker ? (80 + (i % 10)) : (70 + (i % 10));
+
+      const callSign = String.fromCharCode(
+        65 + Math.floor(Math.random() * 26),
+        65 + Math.floor(Math.random() * 26),
+        65 + Math.floor(Math.random() * 26),
+        65 + Math.floor(Math.random() * 26)
+      ) + Math.floor(1000 + Math.random() * 9000);
+
+      const destination = DESTINATIONS[i % DESTINATIONS.length];
+      const imoNumber = 9000000 + Math.floor(Math.random() * 999999);
+      const draught = Number((6 + Math.random() * 10).toFixed(1));
+
+      this.simulatedFleet.push({
+        mmsi,
+        name,
+        routeIndex,
+        progress,
+        speed,
+        isForward,
+        type,
+        callSign,
+        destination,
+        imoNumber,
+        draught,
+        isTanker
+      });
+    }
+  }
+
+  private updateSimulatedFleet() {
+    this.simulatedFleet.forEach((v) => {
+      const speedFactor = 0.0003 + (v.speed / 15) * 0.0002;
+      const step = speedFactor;
+
+      if (v.isForward) {
+        v.progress += step;
+        if (v.progress >= 1.0) {
+          v.progress = 1.0;
+          v.isForward = false;
+        }
+      } else {
+        v.progress -= step;
+        if (v.progress <= 0.0) {
+          v.progress = 0.0;
+          v.isForward = true;
+        }
+      }
+
+      const path = SIMULATED_ROUTES[v.routeIndex];
+      const pos = interpolatePath(path, v.progress);
+
+      this.vessels.set(v.mmsi, {
+        mmsi: v.mmsi,
+        lat: pos.lat,
+        lon: pos.lon,
+        cog: Math.round(pos.bearing),
+        sog: v.speed,
+        heading: Math.round(pos.bearing),
+        name: v.name,
+        type: v.type,
+        callSign: v.callSign,
+        destination: v.destination,
+        imoNumber: v.imoNumber,
+        draught: v.draught,
+        isTanker: v.isTanker,
+        lastUpdate: Date.now(),
+      });
+    });
   }
 
   private connect(apiKey: string) {
@@ -196,7 +433,10 @@ class AisStreamService {
   private cleanupStale() {
     const now = Date.now();
     for (const [mmsi, v] of this.vessels) {
-      if (now - v.lastUpdate > STALE_MS) this.vessels.delete(mmsi);
+      const isSimulated = this.simulatedFleet.some(sim => sim.mmsi === mmsi);
+      if (!isSimulated && now - v.lastUpdate > STALE_MS) {
+        this.vessels.delete(mmsi);
+      }
     }
   }
 

@@ -10,6 +10,7 @@ import "./config/firebase";
 import griaRoutes from "./agents/gria/routes";
 import dsmRoutes from "./agents/dsm/routes";
 import sroaRoutes from "./agents/sroa/routes";
+import apoRoutes from "./agents/apo/routes";
 import mapRoutes from "./agents/map/routes";
 import chatRoutes from "./agents/chat/routes";
 import authRoutes from "./routes/authRoutes";
@@ -36,6 +37,8 @@ app.use("/api", nationalStateRoutes);
 app.use("/api", livePriceRoutes);
 app.use("/api/dsm", dsmRoutes);
 app.use("/api/sroa", sroaRoutes);
+app.use("/api/apo", apoRoutes);
+app.use("/api", apoRoutes);
 app.use("/api/map", mapRoutes);
 app.use("/api/chat", chatRoutes);
 
