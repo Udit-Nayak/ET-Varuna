@@ -228,9 +228,32 @@ export async function getHistory(): Promise<unknown> {
 /** @deprecated Legacy risk-analysis compatibility method. Use vector/intelligence queries instead. */
 export async function getRiskDashboard(): Promise<unknown> {
   const articles = await getRiskHistory();
+  const supportedCorridors = ["Hormuz", "Red Sea", "Malacca"] as const;
+  const corridors = supportedCorridors.flatMap((name) => {
+    const matching = articles.find((article) => {
+      const record = article as unknown as Record<string, unknown>;
+      const corridorNames = [
+        record.corridor,
+        ...(Array.isArray(record.affectedCorridors) ? record.affectedCorridors : []),
+      ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+      return corridorNames.includes(name.toLowerCase());
+    });
+
+    if (!matching) return [];
+    const record = matching as unknown as Record<string, unknown>;
+    const score = Number(record.riskScore ?? record.score);
+    if (!Number.isFinite(score)) return [];
+
+    return [{ name, score: Math.round(score), updatedAt: record.updatedAt ?? record.fetchedAt ?? null }];
+  });
+
   return {
     totalArticles: articles.length,
     highRisk: getHighRiskCount(articles),
+    corridors,
   };
 }
 

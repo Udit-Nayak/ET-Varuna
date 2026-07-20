@@ -222,6 +222,9 @@ interface VesselMapProps {
   zones: TensionZone[];
   affectedVessels: number[];
   isDrawing: boolean;
+  interactive?: boolean;
+  controlsVisible?: boolean;
+  controlsDelayMs?: number;
   status: StreamStatus;
   onZoneDrawn: (coordinates: number[][]) => void;
 }
@@ -233,7 +236,7 @@ const statusMeta: Record<StreamStatus, { label: string; dot: string; text: strin
   offline: { label: "OFFLINE", dot: "bg-risk", text: "text-risk" },
 };
 
-const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneDrawn }: VesselMapProps) => {
+const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, interactive = true, controlsVisible = true, controlsDelayMs = 0, status, onZoneDrawn }: VesselMapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const loadedRef = useRef(false);
@@ -265,6 +268,7 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       style: MAP_STYLE_URL,
       center: [65, 18],
       zoom: 3.2,
+      interactive,
     });
 
     mapRef.current = map;
@@ -672,6 +676,22 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
     };
   }, []);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const handlers = [
+      map.scrollZoom,
+      map.boxZoom,
+      map.dragRotate,
+      map.dragPan,
+      map.keyboard,
+      map.doubleClickZoom,
+      map.touchZoomRotate,
+    ];
+    handlers.forEach((handler) => (interactive ? handler.enable() : handler.disable()));
+  }, [interactive]);
+
   // ---- Custom draw interaction ----
   useEffect(() => {
     const map = mapRef.current;
@@ -871,7 +891,12 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       )}
 
       {/* Inspector: connection + fleet counts + selected vessel */}
-      <div className="pointer-events-auto absolute left-3 top-3 z-10 w-72 overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur">
+      <div
+        className={`absolute left-3 top-3 z-10 w-72 overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur transition-opacity duration-500 ${
+          controlsVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        style={{ transitionDelay: `${controlsVisible ? controlsDelayMs : 0}ms` }}
+      >
         <button
           type="button"
           onClick={() => setInspectorOpen((v) => !v)}
@@ -946,7 +971,12 @@ const VesselMap = ({ vessels, zones, affectedVessels, isDrawing, status, onZoneD
       </div>
 
       {/* Legend chip */}
-      <div className="pointer-events-auto absolute bottom-3 left-3 z-10 overflow-hidden rounded-md border border-border bg-surface/90 font-mono text-[10px] text-muted backdrop-blur">
+      <div
+        className={`absolute bottom-3 left-3 z-10 overflow-hidden rounded-md border border-border bg-surface/90 font-mono text-[10px] text-muted backdrop-blur transition-opacity duration-500 ${
+          controlsVisible ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+        }`}
+        style={{ transitionDelay: `${controlsVisible ? controlsDelayMs : 0}ms` }}
+      >
         <button type="button" onClick={() => setLegendOpen((v) => !v)} className="flex items-center gap-2 px-3 py-2">
           <span>LEGEND</span>
           <span>{legendOpen ? "▾" : "▸"}</span>
