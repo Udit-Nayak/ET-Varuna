@@ -1,9 +1,11 @@
 import { runPipeline } from "./service";
 
 const SCHEDULE_MS = Math.max(5, Number(process.env.GRIA_NEWS_CRON_MINUTES ?? 35)) * 60 * 1000;
+const REFRESH_ON_STARTUP = process.env.GRIA_REFRESH_ON_STARTUP !== "false";
 
 let schedulerInstance: NodeJS.Timeout | null = null;
 let running = false;
+let firstRun = true;
 
 const log = (message: string, error?: unknown): void => {
   if (error) {
@@ -26,9 +28,15 @@ export function startGriaScheduler(): NodeJS.Timeout {
 
     running = true;
     try {
-      log("Starting scheduled GRIA pipeline run");
-      const result = await runPipeline({});
-      log(`Completed scheduled run: ${JSON.stringify((result as { summary?: unknown })?.summary ?? {})}`);
+      const startupRefresh = firstRun && REFRESH_ON_STARTUP;
+      firstRun = false;
+      log(startupRefresh ? "Starting startup GRIA refresh run" : "Starting scheduled GRIA pipeline run");
+      const result = await runPipeline(startupRefresh ? { sourceLastFetchedAt: {} } : {});
+      log(
+        `Completed ${startupRefresh ? "startup refresh" : "scheduled run"}: ${JSON.stringify(
+          (result as { summary?: unknown })?.summary ?? {}
+        )}`
+      );
     } catch (error) {
       log("Scheduled pipeline failed", error);
     } finally {
@@ -51,6 +59,7 @@ export function stopGriaScheduler(): void {
   }
   schedulerInstance = null;
   running = false;
+  firstRun = true;
   log("Scheduler stopped");
 }
 
