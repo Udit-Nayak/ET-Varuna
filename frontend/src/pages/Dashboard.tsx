@@ -247,10 +247,19 @@ const Dashboard = () => {
             messages={chat.messages}
             latestWorkflow={chat.latestWorkflow}
             isBusy={chat.isBusy}
+            isSaving={chat.isSaving}
+            sessions={chat.sessions}
+            activeSessionId={chat.activeSessionId}
+            historyOpen={chat.historyOpen}
+            isHistoryLoading={chat.isHistoryLoading}
             zones={zones}
             impact={impact}
             onAskQuestion={chat.askQuestion}
             onClearChat={chat.clearMessages}
+            onToggleHistory={() => chat.setHistoryOpen((value) => !value)}
+            onStartNewChat={chat.startNewChat}
+            onLoadSession={chat.loadSession}
+            onDeleteSession={chat.deleteSession}
             onAnalyzeZone={analyzeZone}
             onSetTension={setZoneTension}
             onSetDuration={setZoneDuration}

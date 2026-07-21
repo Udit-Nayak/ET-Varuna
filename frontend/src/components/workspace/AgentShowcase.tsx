@@ -41,7 +41,7 @@ const AgentShowcase = ({ onProgressChange }: AgentShowcaseProps) => {
   const barScale = useTransform(scrollYProgress, [0, 1], [0, 1]);
 
   return (
-    <section ref={wrapperRef} className="relative z-10 h-[400vh]">
+    <section ref={wrapperRef} className="relative z-10" style={{ height: `${showcaseAgents.length * 100}vh` }}>
       <div className="sticky top-[65px] h-[calc(100vh-65px)] overflow-hidden">
         <div className="absolute left-6 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-3 md:flex">
           <div className="h-44 w-px overflow-hidden rounded-full bg-border">

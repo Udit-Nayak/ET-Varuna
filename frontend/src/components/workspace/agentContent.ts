@@ -2,29 +2,36 @@ export const showcaseAgents = [
   {
     code: "GRIA",
     name: "Geopolitical Risk Intelligence",
-    desc: "Ingests news, AIS vessel data, sanctions, and prices into a live disruption score per corridor.",
+    desc: "Ingests geopolitical news, AIS activity, sanctions, and market signals into corridor-specific risk intelligence.",
     longDesc:
-      "GRIA keeps the intelligence layer moving, matching corridor activity against shipping, oil, sanctions, conflict, and India supply-chain risk signals so the map never feels detached from the world outside it.",
+      "GRIA continuously monitors foreign affairs, chokepoints, sanctions, shipping activity, oil markets, and India-linked trade exposure to surface the signals most likely to affect crude availability.",
   },
   {
     code: "DSM",
     name: "Disruption Scenario Modeller",
-    desc: "Simulates events - closures, cuts, suspensions - and projects cascading downstream impact.",
+    desc: "Simulates closures, conflict shocks, export cuts, and route suspensions across downstream operations.",
     longDesc:
-      "DSM converts a drawn or preset tension zone into operational pressure: capacity loss, duration, severity signals, and a scenario narrative the rest of the workflow can reason from.",
-  },
-  {
-    code: "SROA",
-    name: "Strategic Reserve Optimiser",
-    desc: "Models optimal SPR drawdown against supply gaps without breaching the safety floor.",
-    longDesc:
-      "SROA turns DSM pressure into reserve policy, release volume, remaining reserve days, and a safety-threshold check so the operator can see whether the plan holds.",
+      "DSM converts live or drawn corridor tension into operational scenarios, estimating capacity loss, disruption duration, refinery stress, fuel-price pressure, power-sector exposure, and wider economic impact.",
   },
   {
     code: "APO",
     name: "Adaptive Procurement Orchestrator",
-    desc: "Ranks alternate sourcing routes by cost, risk, and time-to-delivery when a corridor fails.",
+    desc: "Ranks alternate suppliers and logistics routes by cost, transit time, route risk, and refinery fit.",
     longDesc:
-      "APO is shown as the next orchestration layer for alternate sourcing and logistics. The current repository does not include a live APO backend yet, so workspace output marks it honestly as coming soon.",
+      "APO identifies alternate crude sources and shipping routes when a corridor is stressed, weighing landed cost, tanker availability, route congestion, geopolitical exposure, delivery time, and refinery compatibility.",
+  },
+  {
+    code: "SROA",
+    name: "Strategic Reserve Optimiser",
+    desc: "Plans SPR drawdown schedules against supply gaps, safety floors, and replenishment windows.",
+    longDesc:
+      "SROA translates disruption pressure into reserve policy, calculating release volumes, remaining reserve days, safety-threshold risk, demand substitution needs, and replenishment timing under stress.",
+  },
+  {
+    code: "SCDT",
+    name: "Supply Chain Digital Twin",
+    desc: "Maps India's energy supply network from source corridors to refinery and distribution nodes.",
+    longDesc:
+      "SCDT anchors the workflow on a geospatial supply-chain twin, letting operators test what-if disruptions across ports, vessels, corridors, refinery demand, inventories, and response options in one map-led view.",
   },
 ] as const;

@@ -21,7 +21,9 @@ const AgentChatMessage = ({ message, compact }: AgentChatMessageProps) => {
   const meta = roleMeta[message.role];
   const isUser = message.role === "user";
   const statusClass =
-    message.status === "error"
+    isUser
+      ? "border-amber/60 bg-amber/10"
+      : message.status === "error"
       ? "border-risk/60 bg-risk/10"
       : message.status === "streaming"
       ? "border-amber/50 bg-amber/10"
@@ -30,7 +32,7 @@ const AgentChatMessage = ({ message, compact }: AgentChatMessageProps) => {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`${compact ? "max-w-full p-2.5 text-xs" : "max-w-[92%] p-3 text-sm"} rounded-md border ${statusClass} text-muted`}
+        className={`${compact ? "max-w-[92%] p-2.5 text-xs" : isUser ? "max-w-[72%] p-3 text-sm" : "max-w-[92%] p-3 text-sm"} rounded-md border ${statusClass} text-muted`}
       >
         <div className="mb-2 flex items-center justify-between gap-3">
           <span className={`rounded border px-2 py-0.5 font-mono text-[10px] tracking-wider ${meta.cls}`}>{meta.label}</span>

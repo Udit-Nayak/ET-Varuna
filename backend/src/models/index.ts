@@ -4,3 +4,4 @@ export * from "./Intelligence";
 export * from "./PipelineLog";
 export * from "./NewsSource";
 export * from "./DsmPrediction";
+export { default as ChatSession } from "./ChatSession";

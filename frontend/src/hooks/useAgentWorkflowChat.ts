@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { TensionZone } from "./useSimulation";
 import { Vessel } from "./useVesselStream";
 import { pointInPolygon } from "../utils/geo";
@@ -16,10 +17,34 @@ export interface AgentChatMessageData {
 
 export type AgentWorkflowPayload = Record<string, any> | null;
 
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  lastMessage: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const makeId = () =>
   crypto.randomUUID?.() ?? `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const starterMessage = (content = "Workspace ready. Draw a tension zone or ask any supply-chain risk question."): AgentChatMessageData => ({
+  id: makeId(),
+  role: "system",
+  content,
+  status: "done",
+  timestamp: Date.now(),
+});
+
+const titleFromMessages = (messages: AgentChatMessageData[]) => {
+  const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
+  const firstZone = messages.find((message) => message.content.toLowerCase().startsWith("analyzing "));
+  const source = firstUser?.content || firstZone?.content || "New chat";
+  return source.length > 56 ? `${source.slice(0, 53)}...` : source;
+};
 
 export const corridorLabel = (corridorId: string | null) => {
   const labels: Record<string, string> = {
@@ -169,25 +194,156 @@ const buildGeneralChatMessages = (payload: any): Array<Omit<AgentChatMessageData
 };
 
 export const useAgentWorkflowChat = () => {
-  const [messages, setMessages] = useState<AgentChatMessageData[]>([
-    {
-      id: makeId(),
-      role: "system",
-      content: "Workspace ready. Draw a tension zone or ask any supply-chain risk question.",
-      status: "done",
-      timestamp: Date.now(),
-    },
-  ]);
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<AgentChatMessageData[]>([starterMessage()]);
   const [isBusy, setIsBusy] = useState(false);
   const [latestWorkflow, setLatestWorkflow] = useState<AgentWorkflowPayload>(null);
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const timeoutsRef = useRef<number[]>([]);
+  const saveTimerRef = useRef<number | null>(null);
+  const loadingSessionRef = useRef(false);
+  const bootstrappedRef = useRef(false);
 
   useEffect(
     () => () => {
       timeoutsRef.current.forEach((id) => window.clearTimeout(id));
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     },
     []
   );
+
+  const chatFetch = useCallback(
+    async (path: string, init: RequestInit = {}) => {
+      if (!user) throw new Error("Sign in required");
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...((init.headers as Record<string, string> | undefined) ?? {}),
+        },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || payload.error || "Chat request failed");
+      return payload;
+    },
+    [user]
+  );
+
+  const refreshSessions = useCallback(async () => {
+    if (!user) return [];
+    setIsHistoryLoading(true);
+    try {
+      const payload = await chatFetch("/api/chat/sessions");
+      const nextSessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+      setSessions(nextSessions);
+      return nextSessions as ChatSessionSummary[];
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, [chatFetch, user]);
+
+  const loadSession = useCallback(
+    async (sessionId: string) => {
+      if (!user) return;
+      loadingSessionRef.current = true;
+      setIsHistoryLoading(true);
+      try {
+        const payload = await chatFetch(`/api/chat/sessions/${sessionId}`);
+        const session = payload.session ?? {};
+        setActiveSessionId(String(session._id ?? session.id ?? sessionId));
+        setMessages(Array.isArray(session.messages) && session.messages.length > 0 ? session.messages : [starterMessage()]);
+        setLatestWorkflow(session.latestWorkflow ?? null);
+        setHistoryOpen(false);
+      } finally {
+        setIsHistoryLoading(false);
+        window.setTimeout(() => {
+          loadingSessionRef.current = false;
+        }, 0);
+      }
+    },
+    [chatFetch, user]
+  );
+
+  useEffect(() => {
+    if (!user) {
+      bootstrappedRef.current = false;
+      setSessions([]);
+      setActiveSessionId(null);
+      setLatestWorkflow(null);
+      setMessages([starterMessage()]);
+      return;
+    }
+
+    let cancelled = false;
+    bootstrappedRef.current = false;
+    setIsHistoryLoading(true);
+    chatFetch("/api/chat/sessions")
+      .then(async (payload) => {
+        if (cancelled) return;
+        const nextSessions = Array.isArray(payload.sessions) ? (payload.sessions as ChatSessionSummary[]) : [];
+        setSessions(nextSessions);
+        if (nextSessions[0]) {
+          await loadSession(nextSessions[0].id);
+        }
+      })
+      .catch((error) => console.warn("Chat history load skipped:", error))
+      .finally(() => {
+        if (!cancelled) {
+          bootstrappedRef.current = true;
+          setIsHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatFetch, loadSession, user]);
+
+  const persistSession = useCallback(async () => {
+    if (!user || !bootstrappedRef.current || loadingSessionRef.current || isBusy) return;
+    const hasUserWork = messages.some((message) => message.role === "user") || messages.some((message) => message.content.toLowerCase().startsWith("analyzing "));
+    if (!hasUserWork) return;
+
+    const stableMessages = messages.filter((message) => message.status !== "streaming" && message.status !== "pending");
+    if (stableMessages.length === 0) return;
+
+    setIsSaving(true);
+    try {
+      const body = JSON.stringify({
+        title: titleFromMessages(stableMessages),
+        messages: stableMessages,
+        latestWorkflow,
+      });
+      if (activeSessionId) {
+        await chatFetch(`/api/chat/sessions/${activeSessionId}`, { method: "PATCH", body });
+      } else {
+        const payload = await chatFetch("/api/chat/sessions", { method: "POST", body });
+        const id = String(payload.session?._id ?? payload.session?.id ?? "");
+        if (id) setActiveSessionId(id);
+      }
+      await refreshSessions();
+    } catch (error) {
+      console.warn("Chat autosave skipped:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [activeSessionId, chatFetch, isBusy, latestWorkflow, messages, refreshSessions, user]);
+
+  useEffect(() => {
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      void persistSession();
+    }, 850);
+    return () => {
+      if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    };
+  }, [persistSession]);
 
   const analyzeZoneWithAgents = useCallback(async (zone: TensionZone, vessels: Vessel[]) => {
     const label = corridorLabel(zone.corridorId);
@@ -266,7 +422,10 @@ export const useAgentWorkflowChat = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/chat/ask`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${await user?.getIdToken()}`,
+        },
         body: JSON.stringify({ question: trimmed }),
       });
       const payload = await response.json();
@@ -298,18 +457,39 @@ export const useAgentWorkflowChat = () => {
     }
   }, []);
 
-  const clearMessages = useCallback(() => {
+  const startNewChat = useCallback(() => {
     setLatestWorkflow(null);
-    setMessages([
-      {
-        id: makeId(),
-        role: "system",
-        content: "Transcript cleared. Draw a tension zone or ask any supply-chain risk question.",
-        status: "done",
-        timestamp: Date.now(),
-      },
-    ]);
+    setActiveSessionId(null);
+    setHistoryOpen(false);
+    setMessages([starterMessage("New chat ready. Draw a tension zone or ask any supply-chain risk question.")]);
   }, []);
 
-  return { messages, isBusy, latestWorkflow, analyzeZoneWithAgents, askQuestion, clearMessages };
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      await chatFetch(`/api/chat/sessions/${sessionId}`, { method: "DELETE" });
+      if (activeSessionId === sessionId) {
+        startNewChat();
+      }
+      await refreshSessions();
+    },
+    [activeSessionId, chatFetch, refreshSessions, startNewChat]
+  );
+
+  return {
+    messages,
+    isBusy,
+    latestWorkflow,
+    sessions,
+    activeSessionId,
+    historyOpen,
+    isHistoryLoading,
+    isSaving,
+    analyzeZoneWithAgents,
+    askQuestion,
+    clearMessages: startNewChat,
+    startNewChat,
+    loadSession,
+    deleteSession,
+    setHistoryOpen,
+  };
 };

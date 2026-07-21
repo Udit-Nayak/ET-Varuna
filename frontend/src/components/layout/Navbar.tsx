@@ -63,7 +63,7 @@ const Navbar = () => {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <Link to="/dashboard" className="flex items-center gap-2">
           <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
-          <span className="font-display text-lg font-semibold tracking-tight text-ink">Aegis SCR</span>
+          <span className="font-display text-lg font-semibold tracking-tight text-ink">Sentrix</span>
         </Link>
 
         <div className="flex items-center gap-3">

@@ -21,24 +21,32 @@ const AgentShowcaseCard = ({ agent, index, progress }: AgentShowcaseCardProps) =
   const card = (
     <motion.div
       style={{ scale, opacity, x: cardX }}
-      className="rounded-md border border-amber/40 bg-surface/90 p-6 shadow-2xl shadow-base/60 backdrop-blur"
+      whileHover={{ y: -6 }}
+      transition={{ type: "spring", stiffness: 260, damping: 22 }}
+      className="group rounded-md border border-amber/40 bg-surface/90 p-6 shadow-2xl shadow-base/60 backdrop-blur transition-colors duration-200 hover:border-amber/75 hover:bg-surface/95 hover:shadow-amber/15"
     >
       <div className="mb-10 flex items-center justify-between">
-        <span className="font-mono text-xs text-muted">{String(index + 1).padStart(2, "0")}</span>
-        <span className="rounded border border-amber/50 px-2 py-1 font-mono text-[11px] font-semibold tracking-wider text-amber">
+        <span className="font-mono text-xs text-muted transition-colors duration-200 group-hover:text-ink/80">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <span className="rounded border border-amber/50 px-2 py-1 font-mono text-[11px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
           {agent.code}
         </span>
       </div>
       <h3 className="font-display text-3xl font-semibold tracking-tight text-ink">{agent.name}</h3>
-      <div className="mt-8 h-1 w-24 rounded-full bg-amber" />
+      <p className="mt-4 text-sm leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">
+        {agent.desc}
+      </p>
+      <div className="mt-8 h-1 w-24 rounded-full bg-amber transition-all duration-200 group-hover:w-32" />
     </motion.div>
   );
 
   const description = (
-    <motion.div style={{ opacity, x: descX }} className="max-w-xl">
+    <motion.div style={{ opacity, x: descX }} className="max-w-xl border-l border-amber/55 pl-5">
       <div className="font-mono text-[11px] uppercase tracking-widest text-amber">Agent Focus</div>
-      <p className="mt-4 text-xl leading-relaxed text-ink">{agent.longDesc}</p>
-      <p className="mt-5 text-sm leading-relaxed text-muted">{agent.desc}</p>
+      <p className="mt-4 text-xl font-medium leading-relaxed text-ink drop-shadow-[0_2px_16px_rgba(0,0,0,0.85)]">
+        {agent.longDesc}
+      </p>
     </motion.div>
   );
 

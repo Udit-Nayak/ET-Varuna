@@ -17,7 +17,7 @@ type GriaNewsItem = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const GRIA_NEWS_CACHE_KEY = "aegis-gria-hover-news";
+const GRIA_NEWS_CACHE_KEY = "Sentrix-gria-hover-news";
 
 const formatRelativeTime = (value?: string) => {
   if (!value) return "";
@@ -254,18 +254,22 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
         className="mx-auto flex max-w-6xl flex-col items-center"
       >
         <motion.span variants={item} className="font-mono text-[11px] uppercase tracking-widest text-amber">
-          Supply Chain Intelligence
+          Energy Corridor Intelligence
         </motion.span>
         <motion.h1
           variants={item}
           className="mt-5 max-w-4xl font-display text-4xl font-semibold leading-tight tracking-tight text-ink md:text-6xl"
         >
-          Aegis SCR turns maritime disruption into a live multi-agent response.
+          Sentrix coordinates live risk signals into decisive energy supply action.
         </motion.h1>
-        <motion.p variants={item} className="mt-5 max-w-2xl text-sm leading-relaxed text-muted md:text-base">
-          Draw risk into the map, watch GRIA, DSM, and SROA reason through it, and keep the operator in one cinematic workspace.
+        <motion.p
+          variants={item}
+          className="mt-5 max-w-2xl text-sm font-medium leading-relaxed text-ink/95 drop-shadow-[0_2px_18px_rgba(0,0,0,0.95)] md:text-base"
+        >
+          Monitor corridors, query the agent workflow, and move from geopolitical signal to operational response in one focused workspace.
         </motion.p>
 
+<<<<<<< Updated upstream
         <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {showcaseAgents.map((agent) => (
             <div
@@ -278,6 +282,35 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
               <div className="min-w-0 flex-1">
                 <div className="truncate font-display text-sm font-semibold text-ink">{agent.name}</div>
                 <div className="truncate text-xs text-muted">{agent.desc}</div>
+=======
+        <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {showcaseAgents.map((agent) => {
+            const isGria = agent.code === "GRIA";
+
+            return (
+              <div
+                key={agent.code}
+                onMouseEnter={isGria ? () => setGriaHovered(true) : undefined}
+                onMouseLeave={isGria ? () => setGriaHovered(false) : undefined}
+                className="group relative flex min-h-[4.35rem] items-center gap-3 rounded-md border border-border/90 bg-surface/78 px-4 py-3 text-left shadow-lg shadow-base/35 backdrop-blur transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-surface/95 hover:shadow-2xl hover:shadow-amber/10"
+              >
+                <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
+                  {agent.code}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-display text-sm font-semibold text-ink transition-colors duration-200 group-hover:text-white">{agent.name}</div>
+                  <div className="truncate text-xs leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">{agent.desc}</div>
+                </div>
+                {isGria ? (
+                  <div
+                    className="absolute inset-x-0 top-full pt-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+                    onMouseEnter={() => setGriaHovered(true)}
+                    onMouseLeave={() => setGriaHovered(false)}
+                  >
+                    <GriaHoverNews active={griaHovered} />
+                  </div>
+                ) : null}
+>>>>>>> Stashed changes
               </div>
             </div>
           ))}
@@ -289,7 +322,7 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
           onClick={onUseMe}
           className="mt-10 rounded-md bg-amber px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wider text-base transition-transform hover:scale-[1.02]"
         >
-          Use Me
+          Open Workspace
         </motion.button>
       </motion.div>
 

@@ -12,7 +12,7 @@ const agents = [
   {
     code: "DSM",
     name: "Disruption Scenario Modeller",
-    desc: "Simulates events — closures, cuts, suspensions — and projects cascading downstream impact.",
+    desc: "Simulates closures, chokepoints, and supply interruptions to project downstream impact.",
   },
   {
     code: "APO",
@@ -32,14 +32,14 @@ const agents = [
   {
     code: "TFM",
     name: "Transaction Flow Monitor",
-    desc: "Tracks live fuel transactions in and out of the country to verify recommendations actually worked.",
+    desc: "Tracks live fuel transactions in and out of the country to verify recommendations worked.",
   },
 ];
 
 const stats = [
   { value: "88%", label: "of crude oil is imported" },
   { value: "9.5 days", label: "of strategic reserve cover" },
-  { value: "47 days", label: "avg. stabilisation lag without automated rerouting" },
+  { value: "15 min", label: "scheduled intelligence refresh" },
 ];
 
 const Landing = () => {
@@ -54,12 +54,11 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen bg-base text-ink">
-      {/* Nav */}
       <header className="sticky top-0 z-10 border-b border-border bg-base/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
-            <span className="font-display text-lg font-semibold tracking-tight">Aegis SCR</span>
+            <span className="font-display text-lg font-semibold tracking-tight">Sentrix</span>
           </div>
           <Link
             to="/auth"
@@ -70,22 +69,19 @@ const Landing = () => {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="relative overflow-hidden border-b border-border bg-grid bg-grid bg-fixed">
         <div className="mx-auto grid max-w-6xl gap-12 px-6 py-20 md:grid-cols-2 md:items-center md:py-28">
           <div>
             <span className="mb-5 inline-block rounded-full border border-border px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-amber">
-              Supply Chain Intelligence · Energy Security · Geopolitical Risk
+              Energy Corridor Intelligence | Supply Security | Geopolitical Risk
             </span>
             <h1 className="font-display text-4xl font-semibold leading-[1.1] tracking-tight md:text-5xl">
-              India's oil supply has no early-warning system.
-              <span className="text-amber"> This is one.</span>
+              India-facing energy corridors need faster decisions.
+              <span className="text-amber"> Sentrix gives operators the signal.</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
-              88% of India's crude runs through import corridors that geopolitical shocks
-              repeatedly stress-test — and today's tools plan for predictable conditions, not
-              live disruption. Aegis SCR turns reactive crisis response into a managed,
-              anticipatory process.
+              Sentrix fuses news, vessel movement, reserve posture, and procurement logic so teams
+              can understand disruption early and respond before corridor risk becomes supply stress.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <Link
@@ -98,7 +94,7 @@ const Landing = () => {
                 href="#agents"
                 className="font-mono text-sm text-muted underline-offset-4 hover:text-ink hover:underline"
               >
-                See the six agents ↓
+                See the six agents
               </a>
             </div>
 
@@ -106,9 +102,7 @@ const Landing = () => {
               {stats.map((s) => (
                 <div key={s.label}>
                   <div className="font-display text-2xl font-semibold text-ink">{s.value}</div>
-                  <div className="mt-1 font-mono text-[11px] leading-snug text-muted">
-                    {s.label}
-                  </div>
+                  <div className="mt-1 font-mono text-[11px] leading-snug text-muted">{s.label}</div>
                 </div>
               ))}
             </div>
@@ -118,7 +112,6 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Agents */}
       <section id="agents" className="mx-auto max-w-6xl px-6 py-20">
         <div className="mb-10 max-w-2xl">
           <span className="font-mono text-[11px] uppercase tracking-widest text-amber">
@@ -128,8 +121,8 @@ const Landing = () => {
             Six agents, one response pipeline
           </h2>
           <p className="mt-3 text-muted">
-            Each agent owns one stage — from detecting a risk signal to verifying the recommended
-            response actually closed the gap.
+            Each agent owns one stage, from detecting a risk signal to shaping a response that
+            operators can test against corridor and reserve conditions.
           </p>
         </div>
 
@@ -140,9 +133,7 @@ const Landing = () => {
               className="group rounded-lg border border-border bg-surface p-5 transition-colors hover:border-amber/50"
             >
               <div className="mb-3 flex items-center justify-between">
-                <span className="font-mono text-xs text-muted">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
+                <span className="font-mono text-xs text-muted">{String(i + 1).padStart(2, "0")}</span>
                 <span className="rounded border border-border px-2 py-0.5 font-mono text-[10px] tracking-wider text-amber">
                   {a.code}
                 </span>
@@ -154,12 +145,11 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Footer CTA */}
       <section className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-6 px-6 py-14 md:flex-row md:items-center">
           <div>
             <h3 className="font-display text-2xl font-semibold tracking-tight">
-              Built for the hackathon floor.
+              Built for operational energy resilience.
             </h3>
             <p className="mt-2 text-muted">Sign in to reach your team's dashboard.</p>
           </div>

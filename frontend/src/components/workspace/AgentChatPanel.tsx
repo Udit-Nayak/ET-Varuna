@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import AgentChatMessage from "./AgentChatMessage";
-import { AgentChatMessageData, AgentWorkflowPayload } from "../../hooks/useAgentWorkflowChat";
+import { AgentChatMessageData, AgentWorkflowPayload, ChatSessionSummary } from "../../hooks/useAgentWorkflowChat";
 import { SimulationImpact, TensionZone } from "../../hooks/useSimulation";
+import { useAuth } from "../../context/AuthContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 type AgentTab = "dsm" | "sroa" | "apo" | "tfm";
@@ -10,11 +11,20 @@ interface AgentChatPanelProps {
   messages: AgentChatMessageData[];
   latestWorkflow: AgentWorkflowPayload;
   isBusy: boolean;
+  isSaving: boolean;
+  sessions: ChatSessionSummary[];
+  activeSessionId: string | null;
+  historyOpen: boolean;
+  isHistoryLoading: boolean;
   compact: boolean;
   zones: TensionZone[];
   impact: SimulationImpact;
   onAskQuestion: (query: string) => void;
   onClear: () => void;
+  onToggleHistory: () => void;
+  onStartNewChat: () => void;
+  onLoadSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   onAnalyzeZone: (zone: TensionZone) => void;
   onSetTension: (id: string, pct: number) => void;
   onSetDuration: (id: string, days: number) => void;
@@ -23,6 +33,31 @@ interface AgentChatPanelProps {
 
 const formatBpd = (value: number) =>
   `${Math.round(value).toLocaleString("en-US", { maximumFractionDigits: 0 })} BPD`;
+
+const isTurnStarter = (message: AgentChatMessageData) =>
+  message.role === "user" || message.content.toLowerCase().startsWith("analyzing ");
+
+const groupConversationTurns = (messages: AgentChatMessageData[]) => {
+  const turns: Array<{ id: string; prompt: AgentChatMessageData | null; responses: AgentChatMessageData[] }> = [];
+
+  messages.forEach((message) => {
+    if (isTurnStarter(message)) {
+      turns.push({
+        id: `turn-${message.id}`,
+        prompt: message,
+        responses: [],
+      });
+      return;
+    }
+
+    if (turns.length === 0) {
+      turns.push({ id: "turn-initial", prompt: null, responses: [] });
+    }
+    turns[turns.length - 1].responses.push(message);
+  });
+
+  return turns;
+};
 
 const agentMeta: Record<AgentTab, { label: string; color: string; desc: string }> = {
   dsm: { label: "DSM", color: "text-amber border-amber/50", desc: "Disruption simulation and impact timeline" },
@@ -220,6 +255,7 @@ const TfmKeyValue = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null; workflow: AgentWorkflowPayload; compact: boolean }) => {
+  const { user } = useAuth();
   const [formatted, setFormatted] = useState("");
   const [isFormatting, setIsFormatting] = useState(false);
   const [usedGemini, setUsedGemini] = useState(false);
@@ -246,12 +282,16 @@ const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null;
     setUsedGemini(false);
     setFormatted(localSummary(agent, workflow));
 
-    fetch(`${API_BASE_URL}/api/chat/format-agent-output`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent, payload: workflow }),
-    })
+    user?.getIdToken()
+      .then((token) =>
+        fetch(`${API_BASE_URL}/api/chat/format-agent-output`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ agent, payload: workflow }),
+        })
+      )
       .then(async (response) => {
+        if (!response) throw new Error("Sign in required");
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || payload.error || "Formatter failed");
         if (!cancelled) {
@@ -269,7 +309,7 @@ const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null;
     return () => {
       cancelled = true;
     };
-  }, [agent, workflow]);
+  }, [agent, workflow, user]);
 
   if (agent === "tfm") {
     return <TfmOutputView compact={compact} workflow={workflow} />;
@@ -322,11 +362,20 @@ const AgentChatPanel = ({
   messages,
   latestWorkflow,
   isBusy,
+  isSaving,
+  sessions,
+  activeSessionId,
+  historyOpen,
+  isHistoryLoading,
   compact,
   zones,
   impact,
   onAskQuestion,
   onClear,
+  onToggleHistory,
+  onStartNewChat,
+  onLoadSession,
+  onDeleteSession,
   onAnalyzeZone,
   onSetTension,
   onSetDuration,
@@ -353,6 +402,11 @@ const AgentChatPanel = ({
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-amber">Agent Workflow</div>
             <h2 className="mt-1 font-display text-lg font-semibold tracking-tight">{activeAgent ? "Agent output" : "Live response chat"}</h2>
+            {!activeAgent && (
+              <div className="mt-1 font-mono text-[10px] text-muted">
+                {isHistoryLoading ? "Loading history..." : isSaving ? "Saving chat..." : activeSessionId ? "Saved conversation" : "New conversation"}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             {(Object.keys(agentMeta) as AgentTab[]).map((agent) => (
@@ -365,6 +419,17 @@ const AgentChatPanel = ({
                 {agentMeta[agent].label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={onToggleHistory}
+              title={historyOpen ? "Close chat history" : "Open chat history"}
+              aria-label={historyOpen ? "Close chat history" : "Open chat history"}
+              className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
+                historyOpen ? "border-amber bg-amber/10 text-amber" : "border-border bg-base/70 text-muted hover:border-amber hover:text-amber"
+              }`}
+            >
+              <SidebarToggleIcon />
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -403,7 +468,20 @@ const AgentChatPanel = ({
           <AgentOutputView agent={activeAgent} workflow={latestWorkflow} compact={compact} />
         </div>
       ) : (
-        <>
+        <div className="relative min-h-0 flex flex-1 overflow-hidden">
+          {historyOpen && (
+            <ChatHistorySidebar
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              isLoading={isHistoryLoading}
+              overlay={compact}
+              onNewChat={onStartNewChat}
+              onLoadSession={onLoadSession}
+              onDeleteSession={onDeleteSession}
+              onClose={onToggleHistory}
+            />
+          )}
+          <div className="min-w-0 flex flex-1 flex-col">
           {zones.length > 0 && (
             <div className={`${compact ? "px-3 py-3" : "px-5 py-4"} max-h-56 overflow-y-auto border-b border-border bg-base/35`}>
               <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted">Active tension zones</div>
@@ -453,11 +531,25 @@ const AgentChatPanel = ({
             </div>
           )}
 
-          <div ref={scrollRef} className={`${compact ? "p-3" : "p-5"} min-h-0 flex-1 space-y-3 overflow-y-auto`}>
-            {messages.map((message) => (
-              <AgentChatMessage key={message.id} message={message} compact={compact} />
-            ))}
-          </div>
+            <div ref={scrollRef} className={`${compact ? "p-3" : "p-5"} min-h-0 flex-1 overflow-y-auto`}>
+              <div className={compact ? "space-y-4" : "space-y-6"}>
+                {groupConversationTurns(messages).map((turn, index) => (
+                  <section
+                    key={turn.id}
+                    className={`${index === 0 ? "" : "border-t border-border/70 pt-4"} ${compact ? "space-y-2" : "space-y-3"}`}
+                  >
+                    {turn.prompt && <AgentChatMessage message={turn.prompt} compact={compact} />}
+                    {turn.responses.length > 0 && (
+                      <div className={`${turn.prompt ? "border-l border-border/70 pl-3" : ""} space-y-3`}>
+                        {turn.responses.map((message) => (
+                          <AgentChatMessage key={message.id} message={message} compact={compact} />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                ))}
+              </div>
+            </div>
 
           <form onSubmit={handleSubmit} className={`${compact ? "p-3" : "p-4"} border-t border-border bg-base/80`}>
             <div className={`flex ${compact ? "flex-col" : "flex-row"} gap-2`}>
@@ -476,10 +568,98 @@ const AgentChatPanel = ({
               </button>
             </div>
           </form>
-        </>
+          </div>
+        </div>
       )}
     </aside>
   );
 };
+
+const SidebarToggleIcon = () => (
+  <span className="relative block h-4 w-4 rounded-[3px] border border-current">
+    <span className="absolute bottom-[3px] left-[4px] top-[3px] w-px bg-current opacity-80" />
+  </span>
+);
+
+const ChatHistorySidebar = ({
+  sessions,
+  activeSessionId,
+  isLoading,
+  overlay,
+  onNewChat,
+  onLoadSession,
+  onDeleteSession,
+  onClose,
+}: {
+  sessions: ChatSessionSummary[];
+  activeSessionId: string | null;
+  isLoading: boolean;
+  overlay: boolean;
+  onNewChat: () => void;
+  onLoadSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
+  onClose: () => void;
+}) => (
+  <aside
+    className={`${
+      overlay ? "absolute inset-y-0 left-0 z-30 w-[min(320px,92%)] shadow-2xl shadow-base/70" : "relative w-[280px] shrink-0"
+    } flex min-h-0 flex-col border-r border-border bg-base/95 backdrop-blur`}
+  >
+    <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-3">
+      <div className="min-w-0">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-muted">Chat history</div>
+        <div className="mt-1 truncate font-display text-sm font-semibold text-ink">{sessions.length} saved</div>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
+      >
+        Close
+      </button>
+    </div>
+
+    <div className="border-b border-border p-3">
+      <button
+        type="button"
+        onClick={onNewChat}
+        className="w-full rounded-md border border-amber/60 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-amber transition-colors hover:bg-amber/10"
+      >
+        New chat
+      </button>
+    </div>
+
+    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+      {isLoading ? (
+        <div className="rounded border border-border bg-surface px-3 py-2 font-mono text-xs text-muted">Loading saved chats...</div>
+      ) : sessions.length === 0 ? (
+        <div className="rounded border border-border bg-surface px-3 py-2 font-mono text-xs text-muted">No saved chats yet.</div>
+      ) : (
+        sessions.map((session) => (
+          <div
+            key={session.id}
+            className={`group flex min-w-0 items-start gap-2 rounded border px-3 py-2 ${
+              activeSessionId === session.id ? "border-amber/60 bg-amber/10" : "border-border bg-surface/80"
+            }`}
+          >
+            <button type="button" onClick={() => onLoadSession(session.id)} className="min-w-0 flex-1 text-left">
+              <div className="truncate font-mono text-xs text-ink">{session.title || "New chat"}</div>
+              <div className="mt-1 truncate text-[11px] text-muted">
+                {new Date(session.updatedAt).toLocaleDateString()} · {session.lastMessage || "Saved conversation"}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => onDeleteSession(session.id)}
+              className="shrink-0 rounded border border-transparent px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted opacity-80 transition-colors hover:border-risk/60 hover:text-risk"
+            >
+              Del
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  </aside>
+);
 
 export default AgentChatPanel;

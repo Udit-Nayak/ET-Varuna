@@ -49,12 +49,115 @@ const directAnswerFromGroq = async (question: string): Promise<string | null> =>
   callGroq(
     question,
     [
+<<<<<<< Updated upstream
       "You are a direct answer assistant.",
       "Answer the user's question plainly and briefly.",
       "Do not mention internal agents, analysis pipelines, JSON, or hidden reasoning.",
       "If the user asks for a definition or state, provide the plain-language meaning in one short paragraph.",
     ].join(" "),
     500
+=======
+      "You convert messy operator questions into inputs for an energy supply-chain risk system.",
+      "Correct spelling mistakes and infer the intended corridor or topic.",
+      "Return JSON with keys: normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy.",
+      "userIntent must be one of corridor_risk, scenario_analysis, reserve_planning, procurement, general.",
+      "policy must be conservative, balanced, or aggressive.",
+      "tensionPct is 0-100 and durationDays is 1-90.",
+    ].join(" ")
+  );
+
+  const parsed = text ? parseJsonObject<Partial<NormalizedQuestion>>(text) : null;
+  if (!parsed) return { normalized: fallback, usedGemini: false };
+
+  const tensionPct = clamp(Number(parsed.tensionPct ?? fallback.tensionPct), 0, 100);
+  const policy = parsed.policy === "conservative" || parsed.policy === "balanced" || parsed.policy === "aggressive" ? parsed.policy : policyFromTension(tensionPct);
+
+  return {
+    usedGemini: true,
+    normalized: {
+      normalizedQuery: String(parsed.normalizedQuery ?? fallback.normalizedQuery),
+      userIntent:
+        parsed.userIntent === "corridor_risk" ||
+        parsed.userIntent === "scenario_analysis" ||
+        parsed.userIntent === "reserve_planning" ||
+        parsed.userIntent === "procurement" ||
+        parsed.userIntent === "general"
+          ? parsed.userIntent
+          : fallback.userIntent,
+      corridor: String(parsed.corridor ?? fallback.corridor),
+      keywords: Array.isArray(parsed.keywords) && parsed.keywords.length > 0 ? parsed.keywords.map(String) : fallback.keywords,
+      scenarioText: String(parsed.scenarioText ?? fallback.scenarioText),
+      tensionPct,
+      durationDays: clamp(Math.round(Number(parsed.durationDays ?? fallback.durationDays)), 1, 90),
+      policy,
+    },
+  };
+};
+
+const summarizeGria = (matches: unknown[], normalized: NormalizedQuestion): string => {
+  if (matches.length === 0) {
+    return `GRIA found no stored vector matches for "${normalized.normalizedQuery}", so downstream agents used the normalized scenario and corridor heuristics instead of stopping.`;
+  }
+  return `GRIA retrieved ${matches.length} stored intelligence match${matches.length === 1 ? "" : "es"} for ${normalized.corridor}.`;
+};
+
+const summarizeApo = (apo: ApoOutput): string => {
+  const top = apo.ranked_options[0];
+  if (!top) return "APO found no feasible procurement alternative for the residual supply gap.";
+  return "APO recommends " + top.supplier_name + " via " + top.via + ", covering " + Math.round(top.volume_offered).toLocaleString("en-US") + " barrels at USD " + top.landed_cost_per_barrel.toFixed(2) + "/bbl with " + top.transit_days + "d transit and route risk " + top.route_risk_score.toFixed(0) + "/100.";
+};
+
+const fallbackFinal = (normalized: NormalizedQuestion, griaSummary: string, dsm: DsmSimulationOutput, sroa: SroaOutput, apo: ApoOutput): string =>
+  [
+    `Answer for: ${normalized.normalizedQuery}`,
+    "",
+    `GRIA: ${griaSummary}`,
+    `DSM: ${dsm.capacity_loss_pct}% capacity loss for ${dsm.duration_days} days on ${dsm.corridor}. ${dsm.summary}`,
+    `SROA: ${sroa.policy} reserve policy releases ${Math.round(sroa.total_released_volume).toLocaleString("en-US")} barrels and leaves ${sroa.reserve_after_plan_days.toFixed(2)} reserve days. ${sroa.safety_threshold_breached ? "Safety threshold is under stress." : "Safety threshold remains protected."}`,
+    summarizeApo(apo),
+  ].join("\n");
+
+const synthesizeFinal = async (
+  question: string,
+  normalized: NormalizedQuestion,
+  griaSummary: string,
+  dsm: DsmSimulationOutput,
+  sroa: SroaOutput,
+  apo: ApoOutput
+): Promise<string | null> =>
+  callGemini(
+    JSON.stringify(
+      {
+        originalQuestion: question,
+        normalized,
+        griaSummary,
+        dsm: {
+          corridor: dsm.corridor,
+          capacity_loss_pct: dsm.capacity_loss_pct,
+          duration_days: dsm.duration_days,
+          summary: dsm.summary,
+          based_on_events: dsm.based_on_events,
+        },
+        sroa: {
+          policy: sroa.policy,
+          total_released_volume: sroa.total_released_volume,
+          reserve_after_plan_days: sroa.reserve_after_plan_days,
+          safety_threshold_breached: sroa.safety_threshold_breached,
+          summary: sroa.summary,
+        },
+        apo,
+      },
+      null,
+      2
+    ),
+    [
+      "You are Sentrix's operator-facing analyst.",
+      "Answer the user's question like a competent chat assistant, but ground the response in GRIA, DSM, SROA, and APO outputs.",
+      "Be structured, concise, and actionable.",
+      "Use headings: Direct answer, Agent outputs, Recommended next steps.",
+      "Mention uncertainty when GRIA has sparse stored matches.",
+    ].join(" ")
+>>>>>>> Stashed changes
   );
 
 export const answerAgentChat = async (question: string): Promise<AgentChatAnswer> => {
@@ -221,7 +324,7 @@ export const formatAgentOutput = async (
       2
     ).slice(0, 30000),
     [
-      "You format raw agent output for the Aegis SCR dashboard.",
+      "You format raw agent output for the Sentrix dashboard.",
       "Use Gemini only for formatting and explanation; do not recalculate, reorder, invent, or alter values.",
       "Write a detailed, readable operator page for the selected agent, suitable for a full right-panel page.",
       "Use clear section headings: Snapshot, What the agent decided, Key numbers, Timeline or schedule, Data used, Interpretation, Caveats / next actions.",
