@@ -86,3 +86,12 @@ body {
   color: #8a96a3 !important;
   font-size: 10px !important;
 }
+
+.gria-scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.gria-scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
