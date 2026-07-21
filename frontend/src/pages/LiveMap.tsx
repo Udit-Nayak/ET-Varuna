@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import TensionDrawer from "../components/TensionDrawer";
 import TensionZonePanel from "../components/TensionZonePanel";
-import VesselMap from "../components/VesselMap";
+import VesselMap, { ApoRouteMapOption } from "../components/VesselMap";
 import { AgentZoneAnalysis, matchCorridorToZone, TensionZone, useSimulation } from "../hooks/useSimulation";
 import { useVesselStream } from "../hooks/useVesselStream";
 import { pointInPolygon } from "../utils/geo";
@@ -14,38 +14,127 @@ const formatUtcTime = (date: Date) =>
   date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" });
 
 const presetPolygons = {
-  hormuz: {
+  malacca: {
+    label: "Strait of Malacca",
+    corridorId: "malacca",
     polygon: [
-      [56.0, 26.5],
-      [57.5, 26.5],
-      [57.5, 27.5],
-      [56.0, 27.5],
+      [99.1, 0.8],
+      [104.8, 0.8],
+      [104.8, 5.8],
+      [99.1, 5.8],
     ],
-    tensionPct: 75,
+    tensionPct: 78,
     durationDays: 14,
   },
-  "red-sea": {
+  suez: {
+    label: "Suez Canal",
+    corridorId: "suez",
     polygon: [
-      [42.0, 11.5],
-      [44.0, 11.5],
-      [44.0, 13.0],
-      [42.0, 13.0],
+      [31.8, 29.2],
+      [33.1, 29.2],
+      [33.1, 32.0],
+      [31.8, 32.0],
     ],
-    tensionPct: 60,
-    durationDays: 21,
+    tensionPct: 76,
+    durationDays: 14,
   },
-  "full-gulf": {
+  panama: {
+    label: "Panama Canal",
+    corridorId: "panama",
     polygon: [
-      [48.0, 24.0],
-      [58.0, 24.0],
-      [58.0, 30.0],
-      [48.0, 30.0],
+      [-80.4, 8.7],
+      [-79.1, 8.7],
+      [-79.1, 9.6],
+      [-80.4, 9.6],
     ],
-    tensionPct: 90,
-    durationDays: 7,
+    tensionPct: 68,
+    durationDays: 12,
+  },
+  hormuz: {
+    label: "Strait of Hormuz",
+    corridorId: "hormuz",
+    polygon: [
+      [55.6, 25.9],
+      [57.5, 25.9],
+      [57.5, 27.5],
+      [55.6, 27.5],
+    ],
+    tensionPct: 85,
+    durationDays: 15,
+  },
+  "english-channel": {
+    label: "English Channel",
+    corridorId: "english-channel",
+    polygon: [
+      [-1.8, 49.4],
+      [2.2, 49.4],
+      [2.2, 51.4],
+      [-1.8, 51.4],
+    ],
+    tensionPct: 62,
+    durationDays: 10,
+  },
+  "bab-el-mandeb": {
+    label: "Bab-el-Mandeb",
+    corridorId: "bab-el-mandeb",
+    polygon: [
+      [42.0, 11.4],
+      [44.4, 11.4],
+      [44.4, 13.5],
+      [42.0, 13.5],
+    ],
+    tensionPct: 80,
+    durationDays: 18,
+  },
+  gibraltar: {
+    label: "Strait of Gibraltar",
+    corridorId: "gibraltar",
+    polygon: [
+      [-6.3, 35.6],
+      [-4.8, 35.6],
+      [-4.8, 36.4],
+      [-6.3, 36.4],
+    ],
+    tensionPct: 58,
+    durationDays: 9,
+  },
+  bosphorus: {
+    label: "Bosphorus Strait",
+    corridorId: "bosphorus",
+    polygon: [
+      [28.6, 40.8],
+      [29.4, 40.8],
+      [29.4, 41.4],
+      [28.6, 41.4],
+    ],
+    tensionPct: 64,
+    durationDays: 11,
+  },
+  "cape-good-hope": {
+    label: "Cape of Good Hope",
+    corridorId: "cape-of-good-hope",
+    polygon: [
+      [17.2, -35.2],
+      [20.0, -35.2],
+      [20.0, -33.2],
+      [17.2, -33.2],
+    ],
+    tensionPct: 55,
+    durationDays: 12,
+  },
+  "south-china-sea": {
+    label: "South China Sea",
+    corridorId: "south-china-sea",
+    polygon: [
+      [108.0, 6.0],
+      [121.0, 6.0],
+      [121.0, 20.0],
+      [108.0, 20.0],
+    ],
+    tensionPct: 72,
+    durationDays: 16,
   },
 };
-
 type PresetKey = keyof typeof presetPolygons;
 
 const corridorLabel = (corridorId: string | null) => {
@@ -55,6 +144,12 @@ const corridorLabel = (corridorId: string | null) => {
     malacca: "Strait of Malacca",
     suez: "Suez Canal",
     "persian-gulf": "Persian Gulf",
+    panama: "Panama Canal",
+    "english-channel": "English Channel",
+    gibraltar: "Strait of Gibraltar",
+    bosphorus: "Bosphorus Strait",
+    "cape-of-good-hope": "Cape of Good Hope",
+    "south-china-sea": "South China Sea",
   };
 
   return corridorId ? labels[corridorId] ?? corridorId : "general maritime corridor";
@@ -223,6 +318,7 @@ const summarizeAgentResponse = (payload: any): AgentZoneAnalysis => ({
     totalVolumeNeeded: Number(payload.apo?.total_volume_needed ?? 0),
     topOptions: Array.isArray(payload.apo?.ranked_options)
       ? payload.apo.ranked_options.slice(0, 3).map((option: any) => ({
+          routeId: String(option.route_id ?? ""),
           supplierName: String(option.supplier_name ?? ""),
           route: String(option.via ?? option.route_id ?? ""),
           landedCostPerBarrel: Number(option.landed_cost_per_barrel ?? 0),
@@ -266,6 +362,23 @@ const LiveMap = () => {
     [visibleVessels, zones]
   );
   const impact = useMemo(() => computeImpact(), [computeImpact]);
+  const apoRouteOptions = useMemo<ApoRouteMapOption[]>(() =>
+    Object.values(agentAnalyses).flatMap((analysis) => {
+      if (analysis.status !== "ready" || !analysis.apo?.topOptions) return [];
+      return analysis.apo.topOptions.slice(0, 5).map((option, index) => ({
+        routeId: option.routeId,
+        supplierName: option.supplierName,
+        route: option.route,
+        rank: index + 1,
+        landedCostPerBarrel: option.landedCostPerBarrel,
+        transitDays: option.transitDays,
+        routeRiskScore: option.routeRiskScore,
+        compositeScore: option.compositeScore,
+        volumeOffered: option.volumeOffered,
+      }));
+    }),
+    [agentAnalyses]
+  );
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setCurrentTime(new Date()), 1000);
@@ -346,12 +459,12 @@ const LiveMap = () => {
   const handlePreset = useCallback(
     (preset: PresetKey) => {
       const config = presetPolygons[preset];
-      const corridorId = matchCorridorToZone(config.polygon);
+      const corridorId = config.corridorId ?? matchCorridorToZone(config.polygon);
       const zoneId = addZone(config.polygon, corridorId, config.tensionPct, config.durationDays);
       setIsDrawing(false);
       void analyzeZoneWithAgents({
         id: zoneId,
-        name: "Preset zone",
+        name: config.label,
         polygon: config.polygon,
         corridorId,
         tensionPct: config.tensionPct,
@@ -446,6 +559,7 @@ const LiveMap = () => {
             vessels={visibleVessels}
             zones={zones}
             affectedVessels={affectedVessels}
+            apoRouteOptions={apoRouteOptions}
             isDrawing={isDrawing}
             status={status}
             onZoneDrawn={handleZoneDrawn}

@@ -44,6 +44,7 @@ export interface ApoInput {
   target_refineries?: string[];
   max_options?: number;
   weights?: Partial<ApoScoringWeights>;
+  disrupted_zone_polygon?: number[][];
 }
 
 export interface ApoSupportingEvent {

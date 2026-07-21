@@ -39,6 +39,7 @@ export interface AgentZoneAnalysis {
   apo?: {
     totalVolumeNeeded: number;
     topOptions: Array<{
+      routeId: string;
       supplierName: string;
       route: string;
       landedCostPerBarrel: number;
@@ -95,6 +96,12 @@ const CORRIDOR_SHARE: Record<string, number> = {
   malacca: 0.12,
   suez: 0.08,
   "persian-gulf": 0.22,
+  panama: 0.045,
+  "english-channel": 0.07,
+  gibraltar: 0.055,
+  bosphorus: 0.035,
+  "cape-of-good-hope": 0.08,
+  "south-china-sea": 0.16,
 };
 
 const INDIA_DAILY_IMPORT_BPD = 4548000;
@@ -105,6 +112,12 @@ const corridorBounds = [
   { id: "malacca", minLat: 1, maxLat: 6, minLng: 99, maxLng: 105 },
   { id: "suez", minLat: 29, maxLat: 32, minLng: 32, maxLng: 33 },
   { id: "persian-gulf", minLat: 24, maxLat: 30, minLng: 48, maxLng: 57 },
+  { id: "panama", minLat: 8.7, maxLat: 9.7, minLng: -80.5, maxLng: -79.0 },
+  { id: "english-channel", minLat: 49.4, maxLat: 51.4, minLng: -1.8, maxLng: 2.2 },
+  { id: "gibraltar", minLat: 35.5, maxLat: 36.5, minLng: -6.4, maxLng: -4.7 },
+  { id: "bosphorus", minLat: 40.7, maxLat: 41.5, minLng: 28.5, maxLng: 29.5 },
+  { id: "cape-of-good-hope", minLat: -35.5, maxLat: -33.0, minLng: 17.0, maxLng: 20.3 },
+  { id: "south-china-sea", minLat: 6, maxLat: 20, minLng: 108, maxLng: 121 },
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));

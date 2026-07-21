@@ -2,7 +2,7 @@ import { RefObject } from "react";
 import SplitDivider from "./SplitDivider";
 import AgentChatPanel from "./AgentChatPanel";
 import { useSplitRatio } from "../../hooks/useSplitRatio";
-import { AgentChatMessageData } from "../../hooks/useAgentWorkflowChat";
+import { AgentChatMessageData, AgentWorkflowPayload } from "../../hooks/useAgentWorkflowChat";
 import { SimulationImpact, TensionZone } from "../../hooks/useSimulation";
 
 interface SplitWorkspaceProps {
@@ -12,6 +12,7 @@ interface SplitWorkspaceProps {
   onDividerPointerDown: ReturnType<typeof useSplitRatio>["onPointerDown"];
   chatCompact: boolean;
   messages: AgentChatMessageData[];
+  latestWorkflow: AgentWorkflowPayload;
   isBusy: boolean;
   zones: TensionZone[];
   impact: SimulationImpact;
@@ -30,6 +31,7 @@ const SplitWorkspace = ({
   onDividerPointerDown,
   chatCompact,
   messages,
+  latestWorkflow,
   isBusy,
   zones,
   impact,
@@ -46,6 +48,7 @@ const SplitWorkspace = ({
     <div className="absolute bottom-0 right-0 top-0" style={{ left: `${ratio}%` }}>
       <AgentChatPanel
         messages={messages}
+        latestWorkflow={latestWorkflow}
         isBusy={isBusy}
         compact={chatCompact}
         zones={zones}

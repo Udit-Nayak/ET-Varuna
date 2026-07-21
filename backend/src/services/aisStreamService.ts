@@ -64,15 +64,15 @@ const SIMULATION_ENABLED =
   (!process.env.AISSTREAM_API_KEY && process.env.AIS_SIMULATION_ENABLED !== "false");
 
 const SIMULATED_ROUTES: [number, number][][] = [
-  // Route 1: Persian Gulf to Mumbai
+  // Route 1: Persian Gulf to Mumbai, kept in navigable water lanes.
   [
-    [48.0, 29.0],
-    [50.0, 28.5],
-    [52.2, 27.8],
-    [54.7, 26.9],
-    [56.9, 27.0], // Hormuz
-    [59.0, 25.0],
-    [65.0, 21.0],
+    [48.7, 29.4],
+    [49.6, 28.5],
+    [51.7, 27.2],
+    [54.3, 26.5],
+    [56.6, 26.45], // Hormuz sea lane
+    [59.5, 24.0],
+    [65.5, 21.0],
     [72.5, 18.9]  // Mumbai
   ],
   // Route 2: Suez/Red Sea to Cochin
@@ -118,17 +118,18 @@ const SIMULATED_ROUTES: [number, number][][] = [
     [65.0, 15.0],
     [72.5, 18.9]   // Mumbai
   ],
-  // Route 6: Persian Gulf to Chennai
+  // Route 6: Persian Gulf to Chennai, via open Arabian Sea and south of Sri Lanka.
   [
-    [48.0, 29.0],
-    [50.0, 28.5],
-    [52.2, 27.8],
-    [54.7, 26.9],
-    [56.9, 27.0],
-    [59.0, 25.0],
+    [48.7, 29.4],
+    [49.6, 28.5],
+    [51.7, 27.2],
+    [54.3, 26.5],
+    [56.6, 26.45],
+    [59.5, 24.0],
     [65.0, 15.0],
-    [75.0, 7.0],
-    [80.3, 13.0]   // Chennai
+    [76.0, 5.8],
+    [82.0, 8.6],
+    [80.3, 13.0]   // Chennai approach
   ]
 ];
 

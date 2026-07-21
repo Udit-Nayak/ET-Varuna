@@ -5,7 +5,7 @@ import { corridors } from "../data/corridors";
 import { indiaFacilities, FacilityType } from "../data/indiaPorts";
 import { TensionZone } from "../hooks/useSimulation";
 import { Vessel, StreamStatus } from "../hooks/useVesselStream";
-import { bearingBetween, distanceBetween, getPolygonCenter, isHeadingToward } from "../utils/geo";
+import { bearingBetween, distanceBetween, getPolygonCenter, isHeadingToward, pointInPolygon } from "../utils/geo";
 
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
@@ -198,6 +198,139 @@ const affectedVesselsToGeoJSON = (
   );
 };
 
+const APO_ROUTE_COLORS = ["#5EC9FF", "#E8A33D", "#3FA796", "#C084FC", "#FF8A8A"];
+const WEST_INDIA_TERMINAL: [number, number] = [72.85, 18.95];
+
+const APO_ROUTE_COORDINATES: Record<string, [number, number][]> = {
+  "fujairah-arabian-sea": [[56.35, 25.12], [57.2, 24.7], [59.5, 23.4], [63.8, 21.4], [68.8, 19.6], WEST_INDIA_TERMINAL],
+  "jebel-ali-hormuz": [[55.05, 25.02], [54.2, 25.35], [53.2, 25.85], [54.9, 26.2], [56.45, 26.45], [61.5, 23.6], [67.4, 20.6], WEST_INDIA_TERMINAL],
+  "ras-tanura-hormuz-west-india": [[50.12, 26.65], [51.3, 26.85], [53.2, 26.55], [55.2, 26.45], [56.45, 26.45], [62.4, 23.4], [68.6, 20.1], WEST_INDIA_TERMINAL],
+  "basrah-hormuz-india": [[48.7, 29.5], [49.5, 28.5], [51.6, 27.2], [54.5, 26.55], [56.45, 26.45], [63.5, 22.8], WEST_INDIA_TERMINAL],
+  "vladivostok-malacca-india": [[131.9, 43.1], [126.5, 35.0], [119.0, 22.0], [104.0, 1.25], [95.0, 5.0], [84.0, 11.0], WEST_INDIA_TERMINAL],
+  "kozmino-pacific-india": [[133.05, 42.65], [126.0, 34.0], [118.5, 19.5], [104.0, 1.25], [96.0, 5.2], [84.0, 11.0], WEST_INDIA_TERMINAL],
+  "red-sea-cape-reroute": [[38.2, 24.1], [42.6, 12.5], [44.0, 0.0], [38.0, -16.0], [25.0, -31.0], [18.3, -34.4], [36.0, -25.0], [55.0, -6.0], WEST_INDIA_TERMINAL],
+  "us-gulf-cape-india": [[-90.0, 29.0], [-75.0, 20.0], [-35.0, 0.0], [5.0, -31.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
+  "bonny-cape-india": [[7.2, 4.4], [5.0, -6.0], [10.0, -21.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
+  "santos-cape-india": [[-46.3, -24.0], [-30.0, -30.0], [2.0, -35.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
+};
+
+export interface ApoRouteMapOption {
+  routeId: string;
+  supplierName: string;
+  route: string;
+  rank: number;
+  landedCostPerBarrel?: number;
+  transitDays?: number;
+  routeRiskScore?: number;
+  compositeScore?: number;
+  volumeOffered?: number;
+}
+
+const isPresent = <T,>(value: T | null): value is T => value !== null;
+
+const inferApoRouteId = (option: ApoRouteMapOption) => {
+  const text = (option.routeId + " " + option.route).toLowerCase();
+  if (text.includes("fujairah") || text.includes("arabian sea")) return "fujairah-arabian-sea";
+  if (text.includes("jebel ali")) return "jebel-ali-hormuz";
+  if (text.includes("ras tanura") || text.includes("arab light")) return "ras-tanura-hormuz-west-india";
+  if (text.includes("basrah") || text.includes("iraq")) return "basrah-hormuz-india";
+  if (text.includes("vladivostok")) return "vladivostok-malacca-india";
+  if (text.includes("kozmino")) return "kozmino-pacific-india";
+  if (text.includes("yanbu") || text.includes("red sea") || text.includes("cape reroute")) return "red-sea-cape-reroute";
+  if (text.includes("us gulf")) return "us-gulf-cape-india";
+  if (text.includes("bonny") || text.includes("nigeria")) return "bonny-cape-india";
+  if (text.includes("santos") || text.includes("brazil")) return "santos-cape-india";
+  return option.routeId;
+};
+
+const getApoRouteCoordinates = (option: ApoRouteMapOption): [number, number][] => APO_ROUTE_COORDINATES[inferApoRouteId(option)] ?? [];
+
+const orientation = (a: [number, number], b: [number, number], c: [number, number]) =>
+  (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1]);
+
+const isOnSegment = (a: [number, number], b: [number, number], c: [number, number]) =>
+  b[0] <= Math.max(a[0], c[0]) &&
+  b[0] >= Math.min(a[0], c[0]) &&
+  b[1] <= Math.max(a[1], c[1]) &&
+  b[1] >= Math.min(a[1], c[1]);
+
+const segmentsIntersect = (a: [number, number], b: [number, number], c: [number, number], d: [number, number]) => {
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+  const eps = 1e-9;
+  if (Math.abs(o1) < eps && isOnSegment(a, c, b)) return true;
+  if (Math.abs(o2) < eps && isOnSegment(a, d, b)) return true;
+  if (Math.abs(o3) < eps && isOnSegment(c, a, d)) return true;
+  if (Math.abs(o4) < eps && isOnSegment(c, b, d)) return true;
+  return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+};
+
+const routeIntersectsZone = (coordinates: [number, number][], zone: TensionZone) => {
+  if (coordinates.some((point) => pointInPolygon(point, zone.polygon))) return true;
+  const polygonEdges = zone.polygon.map((point, index) => [point, zone.polygon[(index + 1) % zone.polygon.length]] as [[number, number], [number, number]]);
+  for (let i = 0; i < coordinates.length - 1; i += 1) {
+    const start = coordinates[i];
+    const end = coordinates[i + 1];
+    if (polygonEdges.some(([edgeStart, edgeEnd]) => segmentsIntersect(start, end, edgeStart, edgeEnd))) return true;
+  }
+  return false;
+};
+
+const routeIsBlockedByZones = (coordinates: [number, number][], zones: TensionZone[]) =>
+  zones.some((zone) => routeIntersectsZone(coordinates, zone));
+
+const getRenderableApoRoutes = (options: ApoRouteMapOption[] = [], zones: TensionZone[] = []) =>
+  options
+    .map((option) => {
+      const coordinates = getApoRouteCoordinates(option);
+      return { option, coordinates, blocked: routeIsBlockedByZones(coordinates, zones) };
+    })
+    .filter(({ coordinates, blocked }) => coordinates.length >= 2 && !blocked);
+
+const apoRoutesToGeoJSON = (options: ApoRouteMapOption[] = [], zones: TensionZone[] = []) => ({
+  type: "FeatureCollection" as const,
+  features: getRenderableApoRoutes(options, zones)
+    .map(({ option, coordinates, blocked }, index) => {
+      const color = blocked ? VESSEL_AFFECTED_COLOR : APO_ROUTE_COLORS[index % APO_ROUTE_COLORS.length];
+      return {
+        type: "Feature" as const,
+        properties: {
+          id: option.routeId || "apo-route-" + (index + 1),
+          rank: option.rank || index + 1,
+          color,
+          blocked,
+          status: blocked ? "blocked by active tension zone" : "recommended sea passage",
+          supplierName: option.supplierName,
+          route: option.route,
+          landedCostPerBarrel: option.landedCostPerBarrel,
+          transitDays: option.transitDays,
+          routeRiskScore: option.routeRiskScore,
+          volumeOffered: option.volumeOffered,
+        },
+        geometry: { type: "LineString" as const, coordinates },
+      };
+    })
+    .filter(isPresent),
+});
+
+const apoRouteLabelsToGeoJSON = (options: ApoRouteMapOption[] = [], zones: TensionZone[] = []) => ({
+  type: "FeatureCollection" as const,
+  features: getRenderableApoRoutes(options, zones)
+    .map(({ option, coordinates, blocked }, index) => {
+      return {
+        type: "Feature" as const,
+        properties: {
+          label: "APO " + (option.rank || index + 1),
+          color: blocked ? VESSEL_AFFECTED_COLOR : APO_ROUTE_COLORS[index % APO_ROUTE_COLORS.length],
+        },
+        geometry: { type: "Point" as const, coordinates: getCorridorMidpoint(coordinates) },
+      };
+    })
+    .filter(isPresent),
+});
+
 const zonesToGeoJSON = (zones: TensionZone[]) => ({
   type: "FeatureCollection" as const,
   features: zones.map((zone) => ({
@@ -221,6 +354,7 @@ interface VesselMapProps {
   vessels: Vessel[];
   zones: TensionZone[];
   affectedVessels: number[];
+  apoRouteOptions?: ApoRouteMapOption[];
   isDrawing: boolean;
   status: StreamStatus;
   onZoneDrawn: (coordinates: number[][]) => void;
@@ -247,6 +381,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       vessels,
       zones,
       affectedVessels,
+      apoRouteOptions = [],
       isDrawing,
       status,
       onZoneDrawn,
@@ -501,8 +636,8 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         },
       });
 
-      const makeShipIcon = (color: string) => {
-        const size = 34;
+      const makeShipIcon = (color: string, kind: "tanker" | "vessel" = "vessel") => {
+        const size = 46;
         const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
@@ -513,56 +648,112 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         ctx.shadowBlur = 5;
         ctx.shadowOffsetY = 1;
         ctx.lineJoin = "round";
+        ctx.lineCap = "round";
 
-        ctx.fillStyle = color;
-        ctx.strokeStyle = "#071018";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, -14);
-        ctx.bezierCurveTo(7, -10, 10, 0, 9, 11);
-        ctx.lineTo(4, 15);
-        ctx.lineTo(-4, 15);
-        ctx.lineTo(-9, 11);
-        ctx.bezierCurveTo(-10, 0, -7, -10, 0, -14);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        if (kind === "tanker") {
+          ctx.rotate(Math.PI / 2);
+          ctx.fillStyle = color;
+          ctx.strokeStyle = "#071018";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, -19);
+          ctx.lineTo(10, -15);
+          ctx.lineTo(12, 12);
+          ctx.lineTo(5, 19);
+          ctx.lineTo(-5, 19);
+          ctx.lineTo(-12, 12);
+          ctx.lineTo(-10, -15);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
 
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = "rgba(246, 247, 249, 0.9)";
-        ctx.strokeStyle = "rgba(7, 16, 24, 0.55)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(-4.5, -4, 9, 7, 2);
-        ctx.fill();
-        ctx.stroke();
+          ctx.shadowBlur = 0;
+          const containerColors = ["#E8A33D", "#3FA796", "#5EC9FF", "#D64545", "#C084FC"];
+          for (let row = 0; row < 3; row += 1) {
+            for (let col = 0; col < 5; col += 1) {
+              ctx.fillStyle = containerColors[(row + col) % containerColors.length];
+              ctx.globalAlpha = 0.82;
+              ctx.fillRect(-7 + row * 5, -10 + col * 4.6, 3.7, 3.4);
+              ctx.globalAlpha = 1;
+            }
+          }
+          ctx.fillStyle = "rgba(246, 247, 249, 0.9)";
+          ctx.fillRect(-5, -16.5, 10, 3.5);
+        } else {
+          ctx.rotate(Math.PI / 2);
+          const hull = color === VESSEL_OTHER_COLOR || color === VESSEL_STALE_COLOR ? "#F6F7F9" : color;
+          ctx.fillStyle = hull;
+          ctx.strokeStyle = "#071018";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0, -17);
+          ctx.bezierCurveTo(9, -11, 12, 2, 8, 15);
+          ctx.lineTo(0, 19);
+          ctx.lineTo(-8, 15);
+          ctx.bezierCurveTo(-12, 2, -9, -11, 0, -17);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
 
-        ctx.strokeStyle = "rgba(246, 247, 249, 0.65)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(-5.5, 9);
-        ctx.lineTo(5.5, 9);
-        ctx.stroke();
-
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.45;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-7, 16);
-        ctx.lineTo(-11, 20);
-        ctx.moveTo(7, 16);
-        ctx.lineTo(11, 20);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = "rgba(183, 160, 116, 0.9)";
+          ctx.strokeStyle = "rgba(7, 16, 24, 0.35)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(-4.5, -5, 9, 9, 3);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+          ctx.beginPath();
+          ctx.ellipse(0, 7, 4.5, 2.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-6, 17);
+          ctx.lineTo(6, 17);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         return ctx.getImageData(0, 0, size, size);
       };
-      map.addImage("vessel-tanker", makeShipIcon(VESSEL_TANKER_COLOR));
-      map.addImage("vessel-other", makeShipIcon(VESSEL_OTHER_COLOR));
-      map.addImage("vessel-stale", makeShipIcon(VESSEL_STALE_COLOR));
-      map.addImage("vessel-affected", makeShipIcon(VESSEL_AFFECTED_COLOR));
-      map.addImage("vessel-approaching", makeShipIcon(VESSEL_APPROACHING_COLOR));
+      map.addImage("vessel-tanker", makeShipIcon(VESSEL_TANKER_COLOR, "tanker"));
+      map.addImage("vessel-other", makeShipIcon(VESSEL_OTHER_COLOR, "vessel"));
+      map.addImage("vessel-stale", makeShipIcon(VESSEL_STALE_COLOR, "vessel"));
+      map.addImage("vessel-affected", makeShipIcon(VESSEL_AFFECTED_COLOR, "tanker"));
+      map.addImage("vessel-approaching", makeShipIcon(VESSEL_APPROACHING_COLOR, "vessel"));
+
+      map.addSource("apo-routes", { type: "geojson", data: apoRoutesToGeoJSON([]) });
+      map.addLayer({
+        id: "apo-routes-glow",
+        type: "line",
+        source: "apo-routes",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": ["get", "color"], "line-width": 16, "line-opacity": 0.24, "line-blur": 2 },
+      });
+      map.addLayer({
+        id: "apo-routes-line",
+        type: "line",
+        source: "apo-routes",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 2, 4.5, 5, 7],
+          "line-opacity": 1,
+          "line-dasharray": ["case", ["get", "blocked"], ["literal", [1.2, 0.9]], ["==", ["get", "rank"], 1], ["literal", [1, 0]], ["literal", [2.2, 1.1]]],
+        },
+      });
+      map.addSource("apo-route-labels", { type: "geojson", data: apoRouteLabelsToGeoJSON([]) });
+      map.addLayer({
+        id: "apo-route-labels",
+        type: "symbol",
+        source: "apo-route-labels",
+        layout: { "text-field": ["get", "label"], "text-size": 11, "text-font": ["Noto Sans Regular"], "text-anchor": "center", "text-allow-overlap": false },
+        paint: { "text-color": ["get", "color"], "text-halo-color": "#0B0F14", "text-halo-width": 1.6 },
+      });
 
       map.addSource("vessels", { type: "geojson", data: vesselsToGeoJSON([]) });
       map.addSource("affected-vessels", { type: "geojson", data: vesselsToGeoJSON([]) });
@@ -669,6 +860,14 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         <div style="font-weight:600;color:#F6F7F9;margin-bottom:2px">${escapeHtml(p.name)}</div>
         <div style="color:#8A96A3">risk score <span style="color:#E7ECEF">${p.risk}</span>/100</div>
       </div>`);
+
+      bindPopup("apo-routes-line", (p) => '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;min-width:210px">' +
+        '<div style="font-weight:600;color:#F6F7F9;margin-bottom:4px">APO route #' + escapeHtml(p.rank) + ' · ' + escapeHtml(p.supplierName) + '</div>' +
+        '<div style="color:#8A96A3;margin-bottom:3px">' + escapeHtml(p.route) + '</div>' +
+        '<div style="color:#8A96A3;margin-bottom:3px">Status <span style="color:#E7ECEF">' + escapeHtml(p.status) + '</span></div>' +
+        '<div style="color:#8A96A3">Transit <span style="color:#E7ECEF">' + escapeHtml(p.transitDays) + 'd</span> · Risk <span style="color:#E7ECEF">' + escapeHtml(p.routeRiskScore) + '/100</span></div>' +
+        '<div style="color:#8A96A3">Cost <span style="color:#E7ECEF">USD ' + Number(p.landedCostPerBarrel ?? 0).toFixed(2) + '/bbl</span></div>' +
+      '</div>');
 
       bindPopup("vessels-symbol", (p) => `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;min-width:160px">
         <div style="font-weight:600;color:#F6F7F9;margin-bottom:4px">${escapeHtml(p.name)}</div>
@@ -882,6 +1081,15 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    const routeSource = map.getSource("apo-routes") as maplibregl.GeoJSONSource | undefined;
+    const labelSource = map.getSource("apo-route-labels") as maplibregl.GeoJSONSource | undefined;
+    routeSource?.setData(apoRoutesToGeoJSON(apoRouteOptions, zones));
+    labelSource?.setData(apoRouteLabelsToGeoJSON(apoRouteOptions, zones));
+  }, [apoRouteOptions, mapReady, zones]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
     const source = map.getSource("vessels") as maplibregl.GeoJSONSource | undefined;
     const affectedSource = map.getSource("affected-vessels") as maplibregl.GeoJSONSource | undefined;
     source?.setData(vesselsToGeoJSON(vessels, now, affectedVessels, zones));
@@ -940,7 +1148,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
 
       {/* Inspector: connection + fleet counts + selected vessel */}
       {interactive && !backgroundMode && (
-      <div className={`pointer-events-auto absolute left-3 top-3 z-20 overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur ${compact ? "w-14" : "w-72"}`}>
+      <div className={`pointer-events-auto absolute left-3 top-3 z-20 max-h-[calc(100%-7rem)] overflow-hidden rounded-md border border-border bg-surface/95 font-mono text-[11px] text-muted shadow-lg backdrop-blur ${compact ? "w-14" : "w-80 max-w-[calc(100%-1.5rem)]"}`}>
         <button
           type="button"
           onClick={() => setInspectorOpen((v) => !v)}
@@ -954,7 +1162,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         </button>
 
         {inspectorOpen && !compact && (
-          <div className="border-t border-border/80 px-3 pb-3 pt-2.5">
+          <div className="max-h-[calc(100vh-14rem)] overflow-y-auto border-t border-border/80 px-3 pb-3 pt-2.5">
             <div className="mb-2 text-[10px] text-muted">Last update: {latestUpdate ? formatLastUpdate(latestUpdate) : "waiting"}</div>
 
             <div className="grid grid-cols-3 gap-2">
@@ -974,45 +1182,41 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
               </div>
             </div>
 
-            <div className="mt-3 border-t border-border/80 pt-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold text-ink">Selected vessel</div>
-                {selectedVessel && (
-                  <button
-                    type="button"
-                    className="rounded border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:border-amber hover:text-amber"
-                    onClick={() => setSelectedVessel(null)}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              {selectedVessel ? (
-                <div className="space-y-1">
-                  <div className="truncate text-sm font-semibold text-ink">{selectedVessel.name}</div>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                    <span>MMSI</span>
-                    <span className="text-right text-ink">{selectedVessel.mmsi}</span>
-                    <span>Class</span>
-                    <span className="text-right text-ink">{selectedVessel.isTanker ? "Tanker" : "Other vessel"}</span>
-                    <span>Speed</span>
-                    <span className="text-right text-ink">{formatNumber(selectedVessel.sog, 1, " kn")}</span>
-                    <span>Course</span>
-                    <span className="text-right text-ink">{formatNumber(selectedVessel.cog, 1, "°")}</span>
-                    <span>Destination</span>
-                    <span className="truncate text-right text-ink">{selectedVessel.destination || "n/a"}</span>
-                    <span>Updated</span>
-                    <span className="text-right text-ink">{formatLastUpdate(selectedVessel.lastUpdate)}</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-ink/60">Click a vessel on the map</div>
-              )}
-            </div>
           </div>
         )}
       </div>
+      )}
+
+      {interactive && !backgroundMode && selectedVessel && !compact && (
+        <div className="pointer-events-auto absolute left-3 top-[10.5rem] z-20 w-80 max-w-[calc(100%-1.5rem)] rounded-md border border-border bg-surface/95 p-3 font-mono text-[11px] text-muted shadow-lg backdrop-blur">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted">Selected ship</div>
+              <div className="mt-1 max-w-56 break-words text-sm font-semibold leading-snug text-ink">{selectedVessel.name}</div>
+            </div>
+            <button
+              type="button"
+              className="shrink-0 rounded border border-border px-2 py-1 text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
+              onClick={() => setSelectedVessel(null)}
+            >
+              Clear
+            </button>
+          </div>
+          <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 rounded border border-border/70 bg-base/50 p-2">
+            <span>Class</span>
+            <span className="min-w-0 break-words text-right text-ink">{selectedVessel.isTanker ? "Tanker" : "Other vessel"}</span>
+            <span>MMSI</span>
+            <span className="min-w-0 break-words text-right text-ink">{selectedVessel.mmsi}</span>
+            <span>Speed</span>
+            <span className="min-w-0 break-words text-right text-ink">{formatNumber(selectedVessel.sog, 1, " kn")}</span>
+            <span>Course</span>
+            <span className="min-w-0 break-words text-right text-ink">{formatNumber(selectedVessel.cog, 1, "°")}</span>
+            <span>Destination</span>
+            <span className="min-w-0 break-words text-right text-ink">{selectedVessel.destination || "n/a"}</span>
+            <span>Updated</span>
+            <span className="min-w-0 break-words text-right text-ink">{formatLastUpdate(selectedVessel.lastUpdate)}</span>
+          </div>
+        </div>
       )}
 
       {/* Legend chip */}
@@ -1033,6 +1237,8 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
             <LegendRow color={VESSEL_STALE_COLOR} label="Stale (>10min)" />
             <LegendRow color={VESSEL_AFFECTED_COLOR} label="In tension zone" />
             <LegendRow color={VESSEL_APPROACHING_COLOR} label="Approaching zone" />
+            {apoRouteOptions.length > 0 && <LegendRow color={APO_ROUTE_COLORS[0]} label="APO route #1" />}
+            {apoRouteOptions.length > 1 && <LegendRow color={APO_ROUTE_COLORS[1]} label="APO route #2" />}
           </div>
         )}
       </div>
