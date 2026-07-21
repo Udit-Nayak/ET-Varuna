@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import { showcaseAgents } from "./agentContent";
@@ -54,15 +54,14 @@ const cacheNews = (items: GriaNewsItem[]) => {
   }
 };
 
-const GriaHoverNews = ({ active }: { active: boolean }) => {
+const GriaHoverNews = () => {
   const [items, setItems] = useState<GriaNewsItem[]>(() => readCachedNews());
   const [status, setStatus] = useState<"idle" | "fetching" | "live" | "cached" | "error">(
     items.length > 0 ? "cached" : "idle"
   );
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!active) return;
-
     let alive = true;
     const controller = new AbortController();
 
@@ -115,17 +114,71 @@ const GriaHoverNews = ({ active }: { active: boolean }) => {
       controller.abort();
       window.clearInterval(intervalId);
     };
-  }, [active]);
+  }, []);
 
-  if (!active && items.length === 0) return null;
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node || items.length === 0) return;
+
+    let rafId = 0;
+    let lastTs = 0;
+    let paused = false;
+    const speedPxPerSecond = 42;
+
+    const tick = (timestamp: number) => {
+      if (!node.isConnected) return;
+
+      if (paused) {
+        lastTs = 0;
+        rafId = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      if (lastTs === 0) lastTs = timestamp;
+      const delta = timestamp - lastTs;
+      lastTs = timestamp;
+
+      const maxScrollTop = node.scrollHeight - node.clientHeight;
+      if (maxScrollTop <= 0) {
+        rafId = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      node.scrollTop += (speedPxPerSecond * delta) / 1000;
+
+      if (node.scrollTop >= maxScrollTop - 1) {
+        node.scrollTop = 0;
+      }
+
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    const handlePointerEnter = () => {
+      paused = true;
+    };
+
+    const handlePointerLeave = () => {
+      paused = false;
+      lastTs = 0;
+    };
+
+    node.addEventListener("mouseenter", handlePointerEnter);
+    node.addEventListener("mouseleave", handlePointerLeave);
+    rafId = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      node.removeEventListener("mouseenter", handlePointerEnter);
+      node.removeEventListener("mouseleave", handlePointerLeave);
+    };
+  }, [items.length]);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: -8, scale: 0.98 }}
-      animate={{ opacity: active ? 1 : 0.96, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(26rem,88vw)] overflow-hidden rounded-md border border-amber/40 bg-surface/95 shadow-2xl shadow-base/70 backdrop-blur"
+      className="overflow-hidden rounded-md border border-amber/40 bg-surface/95 shadow-2xl shadow-base/70 backdrop-blur"
     >
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div>
@@ -138,7 +191,7 @@ const GriaHoverNews = ({ active }: { active: boolean }) => {
           {items.length} items
         </div>
       </div>
-      <div className="max-h-56 overflow-y-auto px-3 py-2">
+      <div ref={scrollRef} className="gria-scrollbar-hide max-h-64 overflow-y-auto px-3 py-2">
         <div className="space-y-2">
           {items.length === 0 ? (
             <div className="rounded border border-dashed border-border bg-base/40 px-3 py-4 text-xs text-muted">
@@ -189,10 +242,11 @@ const item: Variants = {
 };
 
 const AgentHero = ({ onUseMe }: AgentHeroProps) => {
-  const [griaHovered, setGriaHovered] = useState(false);
-
   return (
     <section className="relative z-10 flex min-h-[calc(100vh-65px)] items-center justify-center px-6 py-16 text-center">
+      <div className="pointer-events-auto absolute right-4 top-6 z-30 w-[min(26rem,88vw)] text-left">
+          <GriaHoverNews />
+      </div>
       <motion.div
         variants={container}
         initial="hidden"
@@ -213,35 +267,20 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
         </motion.p>
 
         <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {showcaseAgents.map((agent) => {
-            const isGria = agent.code === "GRIA";
-
-            return (
-              <div
-                key={agent.code}
-                onMouseEnter={isGria ? () => setGriaHovered(true) : undefined}
-                onMouseLeave={isGria ? () => setGriaHovered(false) : undefined}
-                className="group relative flex items-center gap-3 rounded-md border border-border bg-surface/75 px-4 py-3 text-left shadow-lg backdrop-blur transition-colors hover:border-amber/60 hover:bg-surface"
-              >
-                <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber">
-                  {agent.code}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-display text-sm font-semibold text-ink">{agent.name}</div>
-                  <div className="truncate text-xs text-muted">{agent.desc}</div>
-                </div>
-                {isGria ? (
-                  <div
-                    className="absolute inset-x-0 top-full pt-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-                    onMouseEnter={() => setGriaHovered(true)}
-                    onMouseLeave={() => setGriaHovered(false)}
-                  >
-                    <GriaHoverNews active={griaHovered} />
-                  </div>
-                ) : null}
+          {showcaseAgents.map((agent) => (
+            <div
+              key={agent.code}
+              className="flex items-center gap-3 rounded-md border border-border bg-surface/75 px-4 py-3 text-left shadow-lg backdrop-blur transition-colors hover:border-amber/60 hover:bg-surface"
+            >
+              <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber">
+                {agent.code}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-display text-sm font-semibold text-ink">{agent.name}</div>
+                <div className="truncate text-xs text-muted">{agent.desc}</div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </motion.div>
 
         <motion.button
