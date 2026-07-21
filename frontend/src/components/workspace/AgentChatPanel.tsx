@@ -104,6 +104,14 @@ type TfmLivePayload = {
   note?: string | null;
 };
 
+type AgentQaMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  usedGemini?: boolean;
+  generatedAt?: string;
+};
+
 const formatMetric = (value: unknown, suffix = "", digits = 0) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "n/a";
@@ -230,6 +238,13 @@ const TfmOutputView = ({ compact, workflow }: { compact: boolean; workflow: Agen
           </div>
         )}
       </div>
+      <AgentContextChat
+        agent="tfm"
+        compact={compact}
+        contextPayload={{ agent_output: snapshot, snapshot, workflow }}
+        disabled={!snapshot}
+        resetKey={snapshot?.generated_at ?? "tfm-loading"}
+      />
     </section>
   );
 };
@@ -254,6 +269,127 @@ const TfmKeyValue = ({ label, value }: { label: string; value: string }) => (
     <span className="shrink-0 text-right text-ink">{value}</span>
   </div>
 );
+
+
+const AgentContextChat = ({
+  agent,
+  contextPayload,
+  compact,
+  disabled = false,
+  resetKey,
+}: {
+  agent: AgentTab;
+  contextPayload: unknown;
+  compact: boolean;
+  disabled?: boolean;
+  resetKey?: string | number | null;
+}) => {
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<AgentQaMessage[]>([]);
+  const [isAsking, setIsAsking] = useState(false);
+  const [error, setError] = useState("");
+  const messageListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMessages([]);
+    setQuestion("");
+    setError("");
+  }, [agent, resetKey]);
+
+  useEffect(() => {
+    messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  const handleAsk = (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = question.trim();
+    if (!trimmed || disabled || isAsking) return;
+
+    const userMessage: AgentQaMessage = {
+      id: `${Date.now()}-user`,
+      role: "user",
+      text: trimmed,
+    };
+    setMessages((current) => [...current, userMessage]);
+    setQuestion("");
+    setError("");
+    setIsAsking(true);
+
+    fetch(`${API_BASE_URL}/api/chat/ask-agent-output`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent, question: trimmed, context: contextPayload }),
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || payload.error || "Agent question failed");
+        const assistantMessage: AgentQaMessage = {
+          id: `${Date.now()}-assistant`,
+          role: "assistant",
+          text: String(payload.answer ?? "No answer returned."),
+          usedGemini: Boolean(payload.usedGemini),
+          generatedAt: payload.generatedAt,
+        };
+        setMessages((current) => [...current, assistantMessage]);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Agent question failed");
+      })
+      .finally(() => setIsAsking(false));
+  };
+
+  return (
+    <div className={(compact ? "p-3" : "p-4") + " border-t border-border bg-base/85"}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-wider text-muted">Ask {agentMeta[agent].label}</div>
+          <div className="text-xs text-muted">Answers use the current {agentMeta[agent].label} output as context.</div>
+        </div>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setMessages([])}
+            className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted hover:border-amber hover:text-amber"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {messages.length > 0 && (
+        <div ref={messageListRef} className="mb-3 max-h-44 space-y-2 overflow-y-auto rounded border border-border bg-surface/60 p-2">
+          {messages.map((message) => (
+            <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[92%] rounded border border-amber/40 bg-amber/10 p-2 text-sm text-ink" : "max-w-[96%] rounded border border-border bg-base/80 p-2 text-sm leading-6 text-ink/90"}>
+              <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted">
+                {message.role === "user" ? "You" : message.usedGemini ? "Gemini answer" : "Fallback answer"}
+              </div>
+              <div className="whitespace-pre-wrap">{message.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <div className="mb-2 rounded border border-risk/60 bg-risk/10 p-2 font-mono text-xs text-risk">{error}</div>}
+
+      <form onSubmit={handleAsk} className={`flex ${compact ? "flex-col" : "flex-row"} gap-2`}>
+        <input
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          disabled={disabled}
+          placeholder={disabled ? `${agentMeta[agent].label} output is loading...` : `Ask about this ${agentMeta[agent].label} output...`}
+          className="min-w-0 flex-1 rounded border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted/70 focus:border-amber disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={disabled || isAsking || !question.trim()}
+          className="rounded bg-amber px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider text-base transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isAsking ? "Ask..." : "Ask"}
+        </button>
+      </form>
+    </div>
+  );
+};
 const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null; workflow: AgentWorkflowPayload; compact: boolean }) => {
   const { user } = useAuth();
   const [formatted, setFormatted] = useState("");
@@ -354,6 +490,13 @@ const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null;
           <div className="whitespace-pre-wrap text-sm leading-7 text-ink/90">{formatted || localSummary(agent, workflow)}</div>
         </article>
       </div>
+      <AgentContextChat
+        agent={agent}
+        compact={compact}
+        contextPayload={{ workflow, agent_output: workflow?.[agent], formatted_output: formatted || localSummary(agent, workflow) }}
+        disabled={!workflow?.[agent]}
+        resetKey={String(workflow?.generatedAt ?? workflow?.[agent]?.scenario_id ?? workflow?.[agent]?.policy ?? workflow?.[agent]?.total_volume_needed ?? agent)}
+      />
     </section>
   );
 };

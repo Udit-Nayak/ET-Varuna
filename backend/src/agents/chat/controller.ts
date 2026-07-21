@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import ChatSession from "../../models/ChatSession";
 import { AuthedRequest } from "../../middleware/verifyFirebaseToken";
-import { answerAgentChat, formatAgentOutput, AgentOutputFormatTarget } from "./service";
+import { answerAgentChat, answerAgentOutputQuestion, formatAgentOutput, AgentOutputFormatTarget, AgentQuestionTarget } from "./service";
 
 export const askAgentChat = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -17,6 +17,38 @@ export const askAgentChat = async (req: Request, res: Response): Promise<void> =
     console.error("Failed to answer agent chat", error);
     res.status(500).json({
       error: "Failed to answer agent chat",
+      detail: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+
+export const askAgentOutputQuestionController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const agent = String(req.body?.agent ?? "").toLowerCase() as AgentQuestionTarget;
+    if (agent !== "dsm" && agent !== "sroa" && agent !== "apo" && agent !== "tfm") {
+      res.status(400).json({ error: "agent must be dsm, sroa, apo, or tfm" });
+      return;
+    }
+
+    const question = String(req.body?.question ?? req.body?.query ?? "").trim();
+    if (!question) {
+      res.status(400).json({ error: "question is required" });
+      return;
+    }
+
+    const context = req.body?.context;
+    if (!context || typeof context !== "object") {
+      res.status(400).json({ error: "context is required" });
+      return;
+    }
+
+    const result = await answerAgentOutputQuestion(agent, question, context);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Failed to answer agent output question", error);
+    res.status(500).json({
+      error: "Failed to answer agent output question",
       detail: error instanceof Error ? error.message : "Unknown error",
     });
   }

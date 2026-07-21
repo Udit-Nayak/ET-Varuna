@@ -2,6 +2,7 @@ import { Router } from "express";
 import { verifyFirebaseToken } from "../../middleware/verifyFirebaseToken";
 import {
   askAgentChat,
+  askAgentOutputQuestionController,
   createChatSession,
   deleteChatSession,
   formatAgentOutputController,
@@ -21,5 +22,6 @@ router.post("/sessions", createChatSession);
 router.get("/sessions/:id", getChatSession);
 router.patch("/sessions/:id", updateChatSession);
 router.delete("/sessions/:id", deleteChatSession);
+router.post("/ask-agent-output", askAgentOutputQuestionController);
 
 export default router;

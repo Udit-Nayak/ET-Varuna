@@ -337,6 +337,7 @@ export const answerAgentChat = async (question: string): Promise<AgentChatAnswer
 };
 
 export type AgentOutputFormatTarget = "dsm" | "sroa" | "apo";
+export type AgentQuestionTarget = AgentOutputFormatTarget | "tfm";
 
 const formatNumber = (value: unknown, digits = 2): string => {
   const numeric = Number(value);
@@ -510,3 +511,136 @@ export const formatAgentOutput = async (
     generatedAt: new Date().toISOString(),
   };
 };
+
+const dayFromQuestion = (question: string): number | null => {
+  const match = question.match(/\bday\s*(\d+)(?:st|nd|rd|th)?\b|\b(\d+)(?:st|nd|rd|th)?\s*day\b/i);
+  const value = Number(match?.[1] ?? match?.[2]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const rankFromQuestion = (question: string): number | null => {
+  const normalized = question.toLowerCase();
+  if (/\b(first|top|best|primary)\b/.test(normalized)) return 1;
+  if (/\b(second)\b/.test(normalized)) return 2;
+  if (/\b(third)\b/.test(normalized)) return 3;
+  const match = normalized.match(/\brank\s*(\d+)\b|\boption\s*(\d+)\b/);
+  const value = Number(match?.[1] ?? match?.[2]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const findDayRow = (rows: any[], day: number): any | null =>
+  rows.find((row) => Number(row?.day) === day) ?? null;
+
+const findDsmDayInText = (text: unknown, day: number): string | null => {
+  if (typeof text !== "string") return null;
+  const pattern = new RegExp(
+    "Day\\s*" + day + "\\s*:\\s*refinery output\\s*([\\d.]+)%\\s*,\\s*price change\\s*([+-]?[\\d.]+)%\\s*,\\s*GDP impact\\s*([+-]?[\\d.]+)%",
+    "i"
+  );
+  const match = text.match(pattern);
+  if (!match) return null;
+  return `Day ${day}: refinery output is ${match[1]}%, price change is ${match[2]}%, and GDP impact is ${match[3]}%.`;
+};
+
+const findSroaDayInText = (text: unknown, day: number): string | null => {
+  if (typeof text !== "string") return null;
+  const pattern = new RegExp(
+    "Day\\s*" + day + "\\s*:\\s*release\\s*([^,]+),\\s*forecast gap\\s*([^,]+),\\s*unfulfilled\\s*([^,]+),\\s*reserve after\\s*([^\\n]+)",
+    "i"
+  );
+  const match = text.match(pattern);
+  if (!match) return null;
+  return `Day ${day}: release ${match[1]}, unfulfilled gap ${match[3]}, reserve after ${match[4]}.`;
+};
+
+const fallbackAgentQuestionAnswer = (agent: AgentQuestionTarget, question: string, context: any): string => {
+  const agentOutput = context?.agent_output ?? context?.snapshot ?? context?.workflow?.[agent] ?? context;
+  if (!agentOutput) {
+    return `${agent.toUpperCase()} output is not available yet.`;
+  }
+
+  const day = dayFromQuestion(question);
+
+  if (agent === "dsm") {
+    const timeline = Array.isArray(agentOutput.impact_timeline) ? agentOutput.impact_timeline : [];
+    if (day) {
+      const row = findDayRow(timeline, day);
+      const textAnswer = findDsmDayInText(context?.formatted_output, day);
+      return row
+        ? `Day ${day}: refinery output is ${formatNumber(row.refinery_output_pct)}%, price change is ${formatNumber(row.price_change_pct)}%, and GDP impact is ${formatNumber(row.gdp_impact_pct)}%. This means fuel supply is stressed and prices are much higher.`
+        : textAnswer ? `${textAnswer} This means fuel supply is stressed and prices are much higher.` : `DSM does not show Day ${day} in this output.`;
+    }
+    if (/price/i.test(question)) return `Peak price change is ${formatNumber(agentOutput.summary_metrics?.peak_price_change_pct ?? agentOutput.peak_fuel_price_change_pct)}%.`;
+    if (/output|refinery/i.test(question)) return `Lowest refinery output is ${formatNumber(agentOutput.summary_metrics?.lowest_refinery_output_pct ?? agentOutput.lowest_refinery_output_pct)}%.`;
+    return `DSM shows ${agentOutput.capacity_loss_pct ?? "n/a"}% capacity loss for ${agentOutput.duration_days ?? "n/a"} days.`;
+  }
+
+  if (agent === "sroa") {
+    const schedule = Array.isArray(agentOutput.drawdown_schedule) ? agentOutput.drawdown_schedule : [];
+    if (day) {
+      const row = findDayRow(schedule, day);
+      const textAnswer = findSroaDayInText(context?.formatted_output, day);
+      return row
+        ? `Day ${day}: release ${formatBarrels(row.release_volume)}, gap left ${formatBarrels(row.unfulfilled_volume)}, reserve ${formatNumber(row.reserve_after_plan_days ?? row.remaining_reserve_days)} days. This shows how much shortage remains after reserve support.`
+        : textAnswer ? `${textAnswer} This shows how much shortage remains after reserve support.` : `SROA does not show Day ${day} in this output.`;
+    }
+    if (/safe|threshold/i.test(question)) return agentOutput.safety_threshold_breached ? "Safety threshold is breached." : "Safety threshold is protected.";
+    return `SROA releases ${formatBarrels(agentOutput.total_released_volume)} and leaves ${formatNumber(agentOutput.reserve_after_plan_days)} reserve days.`;
+  }
+
+  if (agent === "apo") {
+    const options = Array.isArray(agentOutput.ranked_options) ? agentOutput.ranked_options : [];
+    const rank = rankFromQuestion(question) ?? 1;
+    const option = options[rank - 1];
+    return option
+      ? `Rank ${rank}: ${option.supplier_name} via ${option.via}, $${formatNumber(option.landed_cost_per_barrel)}/bbl, ${option.transit_days ?? "n/a"} days.`
+      : `APO does not show rank ${rank} in this output.`;
+  }
+
+  const metrics = agentOutput.metrics ?? agentOutput;
+  if (/price/i.test(question)) return `Current crude price is ${metrics.current_price_usd_per_barrel ?? "n/a"} USD/bbl.`;
+  if (/reserve/i.test(question)) return `Current reserve cover is ${metrics.current_reserve_days ?? "n/a"} days.`;
+  if (/import/i.test(question)) return `Current imports are ${metrics.total_import_volume_bpd ?? "n/a"} BPD.`;
+  return `TFM shows price ${metrics.current_price_usd_per_barrel ?? "n/a"} USD/bbl and reserves ${metrics.current_reserve_days ?? "n/a"} days.`;
+};
+
+export const answerAgentOutputQuestion = async (
+  agent: AgentQuestionTarget,
+  question: string,
+  context: any
+): Promise<{ agent: AgentQuestionTarget; answer: string; usedGemini: boolean; generatedAt: string }> => {
+  const fallback = fallbackAgentQuestionAnswer(agent, question, context);
+  const text = await callGroq(
+    JSON.stringify(
+      {
+        agent,
+        user_question: question,
+        deterministic_context_answer: fallback,
+        provided_context: context,
+      },
+      null,
+      2
+    ).slice(0, 32000),
+    [
+      "You answer operator questions about one selected Aegis SCR agent output.",
+      "Use ONLY the provided context. Do not run new calculations, invent missing data, or use outside knowledge.",
+      "Answer in 1 or 2 short simple sentences only.",
+      "Maximum 45 words.",
+      "No bullets, no headings, no markdown, no long explanation.",
+      "If deterministic_context_answer directly answers the question, use it as the source of truth and only simplify wording if needed.",
+      "If the user asks about a specific day, find that exact day row in the provided timeline/schedule and answer using those values.",
+      "If the user asks about a rank/option, find that exact ranked option and answer using those values.",
+      "Do not answer with the overall summary when a specific day, rank, price, reserve, gap, output, supplier, or route is requested.",
+      "If the exact value is not in the context, say: This output does not show that clearly.",
+    ].join(" "),
+    120
+  );
+
+  return {
+    agent,
+    answer: text?.trim() || fallback,
+    usedGemini: Boolean(text?.trim()),
+    generatedAt: new Date().toISOString(),
+  };
+};
+
