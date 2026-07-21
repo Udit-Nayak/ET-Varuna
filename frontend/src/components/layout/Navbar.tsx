@@ -10,10 +10,12 @@ const getInitials = (displayName?: string | null, email?: string | null) => {
 };
 
 const Navbar = () => {
-  const { user, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const initials = useMemo(() => getInitials(user?.displayName, user?.email), [user?.displayName, user?.email]);
+  const displayName = profile?.displayName || user?.displayName || "Operator";
+  const email = profile?.email || user?.email;
+  const initials = useMemo(() => getInitials(displayName, email), [displayName, email]);
 
   const handleLogout = async () => {
     await logout();
@@ -32,16 +34,16 @@ const Navbar = () => {
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-amber/50 bg-surface font-mono text-xs font-semibold text-amber transition-colors hover:bg-amber/10"
+            className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-amber/50 bg-surface font-mono text-xs font-semibold text-amber transition-colors hover:bg-amber/10"
             aria-label="Open profile menu"
           >
-            {initials}
+            {profile?.photoURL ? <img src={profile.photoURL} alt="" className="h-full w-full object-cover" /> : initials}
           </button>
           {open && (
             <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
               <div className="border-b border-border px-3 py-2">
-                <div className="truncate text-ink">{user?.displayName || "Operator"}</div>
-                <div className="truncate text-[11px]">{user?.email}</div>
+                <div className="truncate text-ink">{displayName}</div>
+                <div className="truncate text-[11px]">{email}</div>
               </div>
               <Link
                 to="/profile"

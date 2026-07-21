@@ -1222,10 +1222,6 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       {/* Legend chip */}
       {interactive && !backgroundMode && (
       <div className={`pointer-events-auto absolute bottom-3 left-3 z-20 overflow-hidden rounded-md border border-border bg-surface/90 font-mono text-[10px] text-muted backdrop-blur ${compact ? "max-w-14" : ""}`}>
-        <button type="button" onClick={() => setLegendOpen((v) => !v)} className="flex items-center gap-2 px-3 py-2">
-          <span>{compact ? "L" : "LEGEND"}</span>
-          <span>{legendOpen ? "▾" : "▸"}</span>
-        </button>
         {legendOpen && !compact && (
           <div className="flex flex-col gap-1.5 border-t border-border/80 px-3 pb-3 pt-2">
             <LegendRow color="#D64545" label="High-risk corridor" />
