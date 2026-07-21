@@ -195,7 +195,7 @@ const GriaHoverNews = () => {
         <div className="space-y-2">
           {items.length === 0 ? (
             <div className="rounded border border-dashed border-border bg-base/40 px-3 py-4 text-xs text-muted">
-              No cached stories yet. Hover again after GRIA fetches recent news.
+              No cached stories yet. GRIA will show recent news here after the next fetch.
             </div>
           ) : (
             items.map((item, index) => (
@@ -245,7 +245,7 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
   return (
     <section className="relative z-10 flex min-h-[calc(100vh-65px)] items-center justify-center px-6 py-16 text-center">
       <div className="pointer-events-auto absolute right-4 top-6 z-30 w-[min(26rem,88vw)] text-left">
-          <GriaHoverNews />
+        <GriaHoverNews />
       </div>
       <motion.div
         variants={container}
@@ -269,48 +269,22 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
           Monitor corridors, query the agent workflow, and move from geopolitical signal to operational response in one focused workspace.
         </motion.p>
 
-<<<<<<< Updated upstream
-        <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {showcaseAgents.map((agent) => (
             <div
               key={agent.code}
-              className="flex items-center gap-3 rounded-md border border-border bg-surface/75 px-4 py-3 text-left shadow-lg backdrop-blur transition-colors hover:border-amber/60 hover:bg-surface"
+              className="group relative flex min-h-[4.35rem] items-center gap-3 rounded-md border border-border/90 bg-surface/78 px-4 py-3 text-left shadow-lg shadow-base/35 backdrop-blur transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-surface/95 hover:shadow-2xl hover:shadow-amber/10"
             >
-              <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber">
+              <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
                 {agent.code}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-display text-sm font-semibold text-ink">{agent.name}</div>
-                <div className="truncate text-xs text-muted">{agent.desc}</div>
-=======
-        <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {showcaseAgents.map((agent) => {
-            const isGria = agent.code === "GRIA";
-
-            return (
-              <div
-                key={agent.code}
-                onMouseEnter={isGria ? () => setGriaHovered(true) : undefined}
-                onMouseLeave={isGria ? () => setGriaHovered(false) : undefined}
-                className="group relative flex min-h-[4.35rem] items-center gap-3 rounded-md border border-border/90 bg-surface/78 px-4 py-3 text-left shadow-lg shadow-base/35 backdrop-blur transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-surface/95 hover:shadow-2xl hover:shadow-amber/10"
-              >
-                <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
-                  {agent.code}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-display text-sm font-semibold text-ink transition-colors duration-200 group-hover:text-white">{agent.name}</div>
-                  <div className="truncate text-xs leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">{agent.desc}</div>
+                <div className="truncate font-display text-sm font-semibold text-ink transition-colors duration-200 group-hover:text-white">
+                  {agent.name}
                 </div>
-                {isGria ? (
-                  <div
-                    className="absolute inset-x-0 top-full pt-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-                    onMouseEnter={() => setGriaHovered(true)}
-                    onMouseLeave={() => setGriaHovered(false)}
-                  >
-                    <GriaHoverNews active={griaHovered} />
-                  </div>
-                ) : null}
->>>>>>> Stashed changes
+                <div className="truncate text-xs leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">
+                  {agent.desc}
+                </div>
               </div>
             </div>
           ))}

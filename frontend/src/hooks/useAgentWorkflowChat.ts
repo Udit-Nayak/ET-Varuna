@@ -420,18 +420,10 @@ export const useAgentWorkflowChat = () => {
     setIsBusy(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat/ask`, {
+      const payload = await chatFetch("/api/chat/ask", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${await user?.getIdToken()}`,
-        },
         body: JSON.stringify({ question: trimmed }),
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.detail || payload.error || "Agent chat failed");
-      }
 
       setLatestWorkflow(payload);
       setMessages((current) => current.filter((message) => message.id !== streamingId));
@@ -455,7 +447,7 @@ export const useAgentWorkflowChat = () => {
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [chatFetch]);
 
   const startNewChat = useCallback(() => {
     setLatestWorkflow(null);

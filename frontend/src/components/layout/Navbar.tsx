@@ -43,9 +43,14 @@ const Navbar = () => {
     setIsBusy(true);
     setAnswer("");
     try {
+      if (!user) throw new Error("Please sign in to use the AI assistant.");
+      const token = await user.getIdToken();
       const response = await fetch(`${API_BASE_URL}/api/chat/ask`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ question: trimmed }),
       });
       const payload = await response.json();

@@ -1,3 +1,11 @@
+import { runApoRecommendation } from "../apo/service";
+import { ApoOutput } from "../apo/types";
+import { runDsmSimulation } from "../dsm/service";
+import { DsmSimulationOutput } from "../dsm/types";
+import { queryVectorKnowledge } from "../gria/service";
+import { runSroaOptimization } from "../sroa/service";
+import { SroaOutput, SroaPolicy } from "../sroa/types";
+
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -5,6 +13,15 @@ export interface AgentChatAnswer {
   final: string;
   generatedAt: string;
   usedGroq: boolean;
+  normalized?: NormalizedQuestion;
+  gria?: {
+    query: string;
+    matches: unknown[];
+    summary: string;
+  };
+  dsm?: DsmSimulationOutput;
+  sroa?: SroaOutput;
+  apo?: ApoOutput;
 }
 
 const extractGroqText = (payload: any): string =>
@@ -45,46 +62,140 @@ const callGroq = async (prompt: string, systemInstruction: string, maxOutputToke
 };
 
 
-const directAnswerFromGroq = async (question: string): Promise<string | null> =>
-  callGroq(
+type UserIntent = "corridor_risk" | "scenario_analysis" | "reserve_planning" | "procurement" | "general";
+
+interface NormalizedQuestion {
+  normalizedQuery: string;
+  userIntent: UserIntent;
+  corridor: string;
+  keywords: string[];
+  scenarioText: string;
+  tensionPct: number;
+  durationDays: number;
+  policy: SroaPolicy;
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const parseJsonObject = <T>(text: string): T | null => {
+  try {
+    const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
+    return JSON.parse(jsonText) as T;
+  } catch {
+    return null;
+  }
+};
+
+const policyFromTension = (tensionPct: number): SroaPolicy => {
+  if (tensionPct >= 75) return "aggressive";
+  if (tensionPct <= 35) return "conservative";
+  return "balanced";
+};
+
+const inferCorridor = (question: string): string => {
+  const lower = question.toLowerCase();
+  if (/hormuz|ormuz/.test(lower)) return "Strait of Hormuz";
+  if (/malacca|melaka|malkka/.test(lower)) return "Strait of Malacca";
+  if (/bab|mandeb|red sea|houthi|yemen/.test(lower)) return "Bab-el-Mandeb / Red Sea";
+  if (/suez|egypt/.test(lower)) return "Suez Canal";
+  if (/persian gulf|iran|qatar|uae|saudi/.test(lower)) return "Persian Gulf";
+  if (/cape|good hope|south africa/.test(lower)) return "Cape of Good Hope";
+  if (/south china|taiwan|spratly/.test(lower)) return "South China Sea";
+  if (/panama/.test(lower)) return "Panama Canal";
+  return "general maritime corridor";
+};
+
+const inferIntent = (question: string): UserIntent => {
+  const lower = question.toLowerCase();
+  if (/reserve|spr|stock|drawdown|release/.test(lower)) return "reserve_planning";
+  if (/procure|supplier|alternate|buy|source|route|reroute/.test(lower)) return "procurement";
+  if (/scenario|simulate|closed|closure|blocked|shut|attack|war|days?/.test(lower)) return "scenario_analysis";
+  if (/risk|corridor|shipping|oil|tanker|chokepoint/.test(lower)) return "corridor_risk";
+  return "general";
+};
+
+const inferTension = (question: string, intent: UserIntent): number => {
+  const lower = question.toLowerCase();
+  if (/closed|blocked|war|attack|halt|shutdown|crisis/.test(lower)) return 78;
+  if (/risk|tension|delay|sanction|conflict/.test(lower)) return 58;
+  if (intent === "general") return 35;
+  return 50;
+};
+
+const inferDuration = (question: string): number => {
+  const match = question.match(/(\d{1,2})\s*(day|days|d)\b/i);
+  if (!match) return 14;
+  return clamp(Math.round(Number(match[1])), 1, 90);
+};
+
+const keywordsFromQuestion = (question: string, corridor: string): string[] => {
+  const tokens = question
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((token) => token.length > 3)
+    .slice(0, 8);
+  return Array.from(new Set([corridor, "India", "oil", "shipping", "tanker", "geopolitics", ...tokens]));
+};
+
+const fallbackNormalizedQuestion = (question: string): NormalizedQuestion => {
+  const normalizedQuery = question.replace(/\s+/g, " ").trim();
+  const corridor = inferCorridor(normalizedQuery);
+  const userIntent = inferIntent(normalizedQuery);
+  const tensionPct = inferTension(normalizedQuery, userIntent);
+  const durationDays = inferDuration(normalizedQuery);
+  return {
+    normalizedQuery,
+    userIntent,
+    corridor,
+    keywords: keywordsFromQuestion(normalizedQuery, corridor),
+    scenarioText: `${normalizedQuery}. Analyze implications for India's crude supply, shipping routes, reserves, procurement, and downstream energy resilience.`,
+    tensionPct,
+    durationDays,
+    policy: policyFromTension(tensionPct),
+  };
+};
+
+const normalizeQuestion = async (question: string): Promise<{ normalized: NormalizedQuestion; usedGroq: boolean }> => {
+  const fallback = fallbackNormalizedQuestion(question);
+  const text = await callGroq(
     question,
     [
-<<<<<<< Updated upstream
-      "You are a direct answer assistant.",
-      "Answer the user's question plainly and briefly.",
-      "Do not mention internal agents, analysis pipelines, JSON, or hidden reasoning.",
-      "If the user asks for a definition or state, provide the plain-language meaning in one short paragraph.",
-    ].join(" "),
-    500
-=======
       "You convert messy operator questions into inputs for an energy supply-chain risk system.",
       "Correct spelling mistakes and infer the intended corridor or topic.",
-      "Return JSON with keys: normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy.",
+      "Return JSON only with keys: normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy.",
       "userIntent must be one of corridor_risk, scenario_analysis, reserve_planning, procurement, general.",
       "policy must be conservative, balanced, or aggressive.",
       "tensionPct is 0-100 and durationDays is 1-90.",
-    ].join(" ")
+      "Prefer India crude oil, maritime chokepoints, trade routes, foreign affairs, and supply-chain resilience context.",
+    ].join(" "),
+    700
   );
 
   const parsed = text ? parseJsonObject<Partial<NormalizedQuestion>>(text) : null;
-  if (!parsed) return { normalized: fallback, usedGemini: false };
+  if (!parsed) return { normalized: fallback, usedGroq: false };
 
   const tensionPct = clamp(Number(parsed.tensionPct ?? fallback.tensionPct), 0, 100);
-  const policy = parsed.policy === "conservative" || parsed.policy === "balanced" || parsed.policy === "aggressive" ? parsed.policy : policyFromTension(tensionPct);
+  const policy =
+    parsed.policy === "conservative" || parsed.policy === "balanced" || parsed.policy === "aggressive"
+      ? parsed.policy
+      : policyFromTension(tensionPct);
+  const userIntent =
+    parsed.userIntent === "corridor_risk" ||
+    parsed.userIntent === "scenario_analysis" ||
+    parsed.userIntent === "reserve_planning" ||
+    parsed.userIntent === "procurement" ||
+    parsed.userIntent === "general"
+      ? parsed.userIntent
+      : fallback.userIntent;
+  const corridor = String(parsed.corridor ?? fallback.corridor).trim() || fallback.corridor;
+  const normalizedQuery = String(parsed.normalizedQuery ?? fallback.normalizedQuery).trim() || fallback.normalizedQuery;
 
   return {
-    usedGemini: true,
+    usedGroq: true,
     normalized: {
-      normalizedQuery: String(parsed.normalizedQuery ?? fallback.normalizedQuery),
-      userIntent:
-        parsed.userIntent === "corridor_risk" ||
-        parsed.userIntent === "scenario_analysis" ||
-        parsed.userIntent === "reserve_planning" ||
-        parsed.userIntent === "procurement" ||
-        parsed.userIntent === "general"
-          ? parsed.userIntent
-          : fallback.userIntent,
-      corridor: String(parsed.corridor ?? fallback.corridor),
+      normalizedQuery,
+      userIntent,
+      corridor,
       keywords: Array.isArray(parsed.keywords) && parsed.keywords.length > 0 ? parsed.keywords.map(String) : fallback.keywords,
       scenarioText: String(parsed.scenarioText ?? fallback.scenarioText),
       tensionPct,
@@ -125,7 +236,7 @@ const synthesizeFinal = async (
   sroa: SroaOutput,
   apo: ApoOutput
 ): Promise<string | null> =>
-  callGemini(
+  callGroq(
     JSON.stringify(
       {
         originalQuestion: question,
@@ -156,18 +267,73 @@ const synthesizeFinal = async (
       "Be structured, concise, and actionable.",
       "Use headings: Direct answer, Agent outputs, Recommended next steps.",
       "Mention uncertainty when GRIA has sparse stored matches.",
-    ].join(" ")
->>>>>>> Stashed changes
+    ].join(" "),
+    1600
   );
 
 export const answerAgentChat = async (question: string): Promise<AgentChatAnswer> => {
-  const final = (await directAnswerFromGroq(question)) ?? "I could not generate an answer right now.";
+  try {
+    const { normalized, usedGroq: usedGroqForNormalization } = await normalizeQuestion(question);
+    const vectorQuery = [normalized.normalizedQuery, normalized.corridor, ...normalized.keywords].join(" ");
+    const griaMatches = (await queryVectorKnowledge({ query: vectorQuery, limit: 6 }).catch((error) => {
+      console.warn("Chat GRIA retrieval unavailable; continuing with deterministic agents:", error instanceof Error ? error.message : error);
+      return [] as unknown[];
+    })) as unknown[];
+    const dsm = await runDsmSimulation({
+      corridor: normalized.corridor,
+      scenario_text: normalized.scenarioText,
+      vector_query: vectorQuery,
+      keywords: normalized.keywords,
+      capacity_loss_pct: normalized.tensionPct,
+      duration_days: normalized.durationDays,
+    });
+    const sroa = await runSroaOptimization({
+      corridor: normalized.corridor,
+      policy: normalized.policy,
+      dsm_output: dsm,
+      scenario_text: normalized.scenarioText,
+    });
+    const apo = await runApoRecommendation({
+      corridor: normalized.corridor,
+      sroa_output: sroa,
+      dsm_output: dsm,
+      max_options: 3,
+    });
+    const griaSummary = summarizeGria(griaMatches, normalized);
+    const synthesized = await synthesizeFinal(question, normalized, griaSummary, dsm, sroa, apo);
+    const final = synthesized?.trim() || fallbackFinal(normalized, griaSummary, dsm, sroa, apo);
 
-  return {
-    final,
-    generatedAt: new Date().toISOString(),
-    usedGroq: true,
-  };
+    return {
+      final,
+      generatedAt: new Date().toISOString(),
+      usedGroq: usedGroqForNormalization || Boolean(synthesized?.trim()),
+      normalized,
+      gria: {
+        query: vectorQuery,
+        matches: griaMatches,
+        summary: griaSummary,
+      },
+      dsm,
+      sroa,
+      apo,
+    };
+  } catch (error) {
+    console.warn("Agent chat workflow failed:", error);
+    const normalized = fallbackNormalizedQuestion(question);
+    return {
+      final: [
+        `Answer for: ${normalized.normalizedQuery}`,
+        "",
+        "The full agent workflow could not complete for this request, but the question was normalized successfully.",
+        `Interpreted corridor/topic: ${normalized.corridor}`,
+        `Intent: ${normalized.userIntent}`,
+        "Please retry once the backend data services are connected.",
+      ].join("\n"),
+      generatedAt: new Date().toISOString(),
+      usedGroq: false,
+      normalized,
+    };
+  }
 };
 
 export type AgentOutputFormatTarget = "dsm" | "sroa" | "apo";
@@ -325,7 +491,7 @@ export const formatAgentOutput = async (
     ).slice(0, 30000),
     [
       "You format raw agent output for the Sentrix dashboard.",
-      "Use Gemini only for formatting and explanation; do not recalculate, reorder, invent, or alter values.",
+      "Use the language model only for formatting and explanation; do not recalculate, reorder, invent, or alter values.",
       "Write a detailed, readable operator page for the selected agent, suitable for a full right-panel page.",
       "Use clear section headings: Snapshot, What the agent decided, Key numbers, Timeline or schedule, Data used, Interpretation, Caveats / next actions.",
       "For DSM, explain the day-by-day impact timeline, assumptions, refinery output, price impact, and GDP/power stress meaning.",

@@ -69,7 +69,7 @@ const Landing = () => {
         </div>
       </header>
 
-      <section className="relative overflow-hidden border-b border-border bg-grid bg-grid bg-fixed">
+      <section className="relative overflow-hidden border-b border-border bg-grid bg-fixed">
         <div className="mx-auto grid max-w-6xl gap-12 px-6 py-20 md:grid-cols-2 md:items-center md:py-28">
           <div>
             <span className="mb-5 inline-block rounded-full border border-border px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-amber">
