@@ -94,9 +94,9 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    if (!isWorkspace) return;
+    if (!isWorkspace || split.isDragging) return;
     requestMapResize();
-  }, [isWorkspace, requestMapResize, split.ratio]);
+  }, [isWorkspace, requestMapResize, split.isDragging, split.ratio]);
 
   useEffect(
     () => () => {
@@ -112,12 +112,11 @@ const Dashboard = () => {
       const width = entries[0]?.contentRect.width ?? 0;
       setMapPaneWidth((width * split.ratio) / 100);
       setChatPaneWidth((width * (100 - split.ratio)) / 100);
-      requestMapResize();
     });
 
     observer.observe(workspaceRef.current);
     return () => observer.disconnect();
-  }, [requestMapResize, split.ratio]);
+  }, [split.ratio]);
 
   useEffect(() => {
     const handleScroll = () => {
