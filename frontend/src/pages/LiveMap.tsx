@@ -326,6 +326,8 @@ const summarizeAgentResponse = (payload: any): AgentZoneAnalysis => ({
           routeRiskScore: Number(option.route_risk_score ?? 0),
           compositeScore: Number(option.composite_score ?? 0),
           volumeOffered: Number(option.volume_offered ?? 0),
+          routeGeometry: Array.isArray(option.route_geometry) ? option.route_geometry : undefined,
+          routeFeasibilityNotes: Array.isArray(option.route_feasibility_notes) ? option.route_feasibility_notes.map(String) : [],
           explanation: String(option.explanation ?? ""),
         }))
       : [],
@@ -375,6 +377,8 @@ const LiveMap = () => {
         routeRiskScore: option.routeRiskScore,
         compositeScore: option.compositeScore,
         volumeOffered: option.volumeOffered,
+        routeGeometry: option.routeGeometry,
+        routeFeasibilityNotes: option.routeFeasibilityNotes,
       }));
     }),
     [agentAnalyses]

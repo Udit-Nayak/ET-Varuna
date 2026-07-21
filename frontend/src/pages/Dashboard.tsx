@@ -29,6 +29,8 @@ const workflowApoRoutes = (workflow: Record<string, any> | null): ApoRouteMapOpt
     routeRiskScore: Number(option.route_risk_score ?? 0),
     compositeScore: Number(option.composite_score ?? 0),
     volumeOffered: Number(option.volume_offered ?? 0),
+    routeGeometry: Array.isArray(option.route_geometry) ? option.route_geometry : undefined,
+    routeFeasibilityNotes: Array.isArray(option.route_feasibility_notes) ? option.route_feasibility_notes.map(String) : [],
   }));
 };
 

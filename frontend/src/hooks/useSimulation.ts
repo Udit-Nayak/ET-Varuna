@@ -47,6 +47,8 @@ export interface AgentZoneAnalysis {
       routeRiskScore: number;
       compositeScore: number;
       volumeOffered: number;
+      routeGeometry?: [number, number][];
+      routeFeasibilityNotes?: string[];
       explanation: string;
     }>;
     llmFlags: string[];

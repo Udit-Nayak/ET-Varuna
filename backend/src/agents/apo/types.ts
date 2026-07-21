@@ -63,6 +63,8 @@ export interface ApoCandidateScore {
   crude_grade: string;
   route_id: string;
   via: string;
+  route_geometry?: [number, number][];
+  route_feasibility_notes?: string[];
   landed_cost_per_barrel: number;
   transit_days: number;
   port_congestion_factor: number;

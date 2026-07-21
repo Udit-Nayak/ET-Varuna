@@ -30,6 +30,7 @@ const VESSEL_APPROACHING_COLOR = "#E8A33D";
 const DRAFT_COLOR = "#E8A33D";
 const CLOSE_VERTEX_PX = 10;
 const DEDUPE_PX = 6;
+const STATIC_CORRIDORS = corridors.filter((corridor) => corridor.id !== "cape-of-good-hope");
 
 interface SelectedVesselDetails {
   mmsi: number;
@@ -123,7 +124,7 @@ const getCorridorMidpoint = (coordinates: [number, number][]) => {
 
 const corridorLabelsToGeoJSON = () => ({
   type: "FeatureCollection" as const,
-  features: corridors.map((corridor) => ({
+  features: STATIC_CORRIDORS.map((corridor) => ({
     type: "Feature" as const,
     properties: {
       id: corridor.id,
@@ -202,14 +203,14 @@ const APO_ROUTE_COLORS = ["#5EC9FF", "#E8A33D", "#3FA796", "#C084FC", "#FF8A8A"]
 const WEST_INDIA_TERMINAL: [number, number] = [72.85, 18.95];
 
 const APO_ROUTE_COORDINATES: Record<string, [number, number][]> = {
-  "fujairah-arabian-sea": [[56.35, 25.12], [57.2, 24.7], [59.5, 23.4], [63.8, 21.4], [68.8, 19.6], WEST_INDIA_TERMINAL],
+  "fujairah-arabian-sea": [[56.35, 25.12], [57.8, 24.6], [60.8, 23.2], [64.8, 21.0], [69.3, 19.4], WEST_INDIA_TERMINAL],
   "jebel-ali-hormuz": [[55.05, 25.02], [54.2, 25.35], [53.2, 25.85], [54.9, 26.2], [56.45, 26.45], [61.5, 23.6], [67.4, 20.6], WEST_INDIA_TERMINAL],
   "ras-tanura-hormuz-west-india": [[50.12, 26.65], [51.3, 26.85], [53.2, 26.55], [55.2, 26.45], [56.45, 26.45], [62.4, 23.4], [68.6, 20.1], WEST_INDIA_TERMINAL],
   "basrah-hormuz-india": [[48.7, 29.5], [49.5, 28.5], [51.6, 27.2], [54.5, 26.55], [56.45, 26.45], [63.5, 22.8], WEST_INDIA_TERMINAL],
-  "vladivostok-malacca-india": [[131.9, 43.1], [126.5, 35.0], [119.0, 22.0], [104.0, 1.25], [95.0, 5.0], [84.0, 11.0], WEST_INDIA_TERMINAL],
-  "kozmino-pacific-india": [[133.05, 42.65], [126.0, 34.0], [118.5, 19.5], [104.0, 1.25], [96.0, 5.2], [84.0, 11.0], WEST_INDIA_TERMINAL],
-  "red-sea-cape-reroute": [[38.2, 24.1], [42.6, 12.5], [44.0, 0.0], [38.0, -16.0], [25.0, -31.0], [18.3, -34.4], [36.0, -25.0], [55.0, -6.0], WEST_INDIA_TERMINAL],
-  "us-gulf-cape-india": [[-90.0, 29.0], [-75.0, 20.0], [-35.0, 0.0], [5.0, -31.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
+  "vladivostok-malacca-india": [[131.9, 43.1], [130.0, 36.0], [124.0, 27.0], [119.0, 20.0], [111.0, 8.0], [104.2, 1.15], [102.2, 2.2], [100.7, 3.8], [99.4, 5.2], [96.2, 6.1], [90.0, 7.0], [84.0, 6.7], [80.8, 6.2], [78.5, 5.0], [76.5, 6.0], [74.8, 9.0], [73.4, 13.2], WEST_INDIA_TERMINAL],
+  "kozmino-pacific-india": [[133.05, 42.65], [130.0, 35.0], [123.5, 25.5], [118.0, 18.5], [111.0, 8.0], [104.2, 1.15], [102.2, 2.2], [100.7, 3.8], [99.4, 5.2], [96.2, 6.1], [90.0, 7.0], [84.0, 6.7], [80.8, 6.2], [78.5, 5.0], [76.5, 6.0], [74.8, 9.0], [73.4, 13.2], WEST_INDIA_TERMINAL],
+  "red-sea-cape-reroute": [[38.2, 24.1], [39.6, 18.0], [42.6, 12.5], [43.2, 5.0], [41.0, -6.0], [34.0, -18.0], [25.0, -31.0], [18.3, -34.4], [35.0, -27.0], [50.0, -12.0], [63.0, 2.0], WEST_INDIA_TERMINAL],
+  "us-gulf-cape-india": [[-90.0, 29.0], [-82.0, 23.5], [-60.0, 10.0], [-35.0, -5.0], [-10.0, -25.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
   "bonny-cape-india": [[7.2, 4.4], [5.0, -6.0], [10.0, -21.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
   "santos-cape-india": [[-46.3, -24.0], [-30.0, -30.0], [2.0, -35.0], [18.3, -34.4], [39.0, -22.0], [58.0, -4.0], WEST_INDIA_TERMINAL],
 };
@@ -224,6 +225,8 @@ export interface ApoRouteMapOption {
   routeRiskScore?: number;
   compositeScore?: number;
   volumeOffered?: number;
+  routeGeometry?: [number, number][];
+  routeFeasibilityNotes?: string[];
 }
 
 const isPresent = <T,>(value: T | null): value is T => value !== null;
@@ -243,7 +246,8 @@ const inferApoRouteId = (option: ApoRouteMapOption) => {
   return option.routeId;
 };
 
-const getApoRouteCoordinates = (option: ApoRouteMapOption): [number, number][] => APO_ROUTE_COORDINATES[inferApoRouteId(option)] ?? [];
+const getApoRouteCoordinates = (option: ApoRouteMapOption): [number, number][] =>
+  option.routeGeometry && option.routeGeometry.length >= 2 ? option.routeGeometry : APO_ROUTE_COORDINATES[inferApoRouteId(option)] ?? [];
 
 const orientation = (a: [number, number], b: [number, number], c: [number, number]) =>
   (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1]);
@@ -450,7 +454,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         type: "geojson",
         data: {
           type: "FeatureCollection",
-          features: corridors.map((c) => ({
+          features: STATIC_CORRIDORS.map((c) => ({
             type: "Feature",
             properties: { id: c.id, name: c.name, risk: c.risk },
             geometry: { type: "LineString", coordinates: c.coordinates },
@@ -732,7 +736,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         type: "line",
         source: "apo-routes",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": ["get", "color"], "line-width": 16, "line-opacity": 0.24, "line-blur": 2 },
+        paint: { "line-color": ["get", "color"], "line-width": 10, "line-opacity": 0.22, "line-blur": 1 },
       });
       map.addLayer({
         id: "apo-routes-line",
@@ -741,7 +745,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": ["get", "color"],
-          "line-width": ["interpolate", ["linear"], ["zoom"], 2, 4.5, 5, 7],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 2, 3, 5, 5],
           "line-opacity": 1,
           "line-dasharray": ["case", ["get", "blocked"], ["literal", [1.2, 0.9]], ["==", ["get", "rank"], 1], ["literal", [1, 0]], ["literal", [2.2, 1.1]]],
         },
@@ -1119,6 +1123,8 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
     setSelectedVessel(vesselToDetails(latestSelected));
   }, [selectedVessel?.mmsi, vessels]);
 
+  const renderableApoRouteCount = getRenderableApoRoutes(apoRouteOptions, zones).length;
+  const hiddenApoRouteCount = Math.max(0, apoRouteOptions.length - renderableApoRouteCount);
   const meta = statusMeta[status];
 
   return (
@@ -1143,6 +1149,12 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       {interactive && !backgroundMode && isDrawing && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-amber/40 bg-surface/95 px-4 py-1.5 font-mono text-[11px] text-amber shadow-lg backdrop-blur">
           Click to place points · click first point or double-click to finish · Esc to cancel
+        </div>
+      )}
+
+      {interactive && !backgroundMode && apoRouteOptions.length > 0 && renderableApoRouteCount === 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-14 z-20 max-w-md -translate-x-1/2 rounded-md border border-risk/60 bg-surface/95 px-4 py-2 font-mono text-[11px] text-risk shadow-lg backdrop-blur">
+          APO routes hidden: all current options cross an active disruption zone. Re-run APO after backend restart for fresh feasible reroutes.
         </div>
       )}
 
@@ -1233,8 +1245,9 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
             <LegendRow color={VESSEL_STALE_COLOR} label="Stale (>10min)" />
             <LegendRow color={VESSEL_AFFECTED_COLOR} label="In tension zone" />
             <LegendRow color={VESSEL_APPROACHING_COLOR} label="Approaching zone" />
-            {apoRouteOptions.length > 0 && <LegendRow color={APO_ROUTE_COLORS[0]} label="APO route #1" />}
-            {apoRouteOptions.length > 1 && <LegendRow color={APO_ROUTE_COLORS[1]} label="APO route #2" />}
+            {renderableApoRouteCount > 0 && <LegendRow color={APO_ROUTE_COLORS[0]} label="APO route #1" />}
+            {renderableApoRouteCount > 1 && <LegendRow color={APO_ROUTE_COLORS[1]} label="APO route #2" />}
+            {hiddenApoRouteCount > 0 && <LegendRow color={VESSEL_AFFECTED_COLOR} label={`${hiddenApoRouteCount} blocked APO route${hiddenApoRouteCount === 1 ? "" : "s"}`} />}
           </div>
         )}
       </div>
