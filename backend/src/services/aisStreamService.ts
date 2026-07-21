@@ -467,6 +467,25 @@ class AisStreamService {
     );
   }
 
+  getSnapshot() {
+    const vessels = Array.from(this.vessels.values()).filter(
+      (v) => isTradingVesselType(v.type) || Boolean(v.destination) || Boolean(v.draught)
+    );
+    return {
+      total: vessels.length,
+      live: vessels.filter((v) => this.liveMmsis.has(v.mmsi)).length,
+      simulated: vessels.filter((v) => this.simulatedMmsis.has(v.mmsi)).length,
+      tankers: vessels.filter((v) => v.isTanker).length,
+      position_reports_received: this.positionReportCount,
+      static_reports_received: this.staticDataCount,
+      last_update: vessels.reduce<string | null>((latest, vessel) => {
+        if (!latest || vessel.lastUpdate > new Date(latest).getTime()) return new Date(vessel.lastUpdate).toISOString();
+        return latest;
+      }, null),
+      source: process.env.AISSTREAM_API_KEY ? "AISStream + simulator" : "AIS simulator",
+    };
+  }
+
   private broadcast() {
     const all = Array.from(this.vessels.values()).filter(
       (v) => isTradingVesselType(v.type) || Boolean(v.destination) || Boolean(v.draught)

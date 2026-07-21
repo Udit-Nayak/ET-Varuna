@@ -13,6 +13,7 @@ import sroaRoutes from "./agents/sroa/routes";
 import apoRoutes from "./agents/apo/routes";
 import mapRoutes from "./agents/map/routes";
 import chatRoutes from "./agents/chat/routes";
+import tfmRoutes from "./agents/tfm/routes";
 import authRoutes from "./routes/authRoutes";
 import { bootstrapGria } from "./agents/gria/bootstrap";
 import nationalStateRoutes from "./agents/shared/nationalStateRoutes";
@@ -41,6 +42,7 @@ app.use("/api/apo", apoRoutes);
 app.use("/api", apoRoutes);
 app.use("/api/map", mapRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/tfm", tfmRoutes);
 
 // Module routers get mounted here as each teammate builds their layer, e.g.:
 // app.use("/api/gria", griaRoutes);
