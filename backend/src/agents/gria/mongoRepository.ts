@@ -7,23 +7,6 @@ const VECTOR_COLLECTION = "griaVectorDocuments";
 const buildId = (input: RiskModelInput): string =>
   `${input.country}:${input.corridor}:${input.event}:${input.sourceArticleIds.join(",")}`.toLowerCase();
 
-const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
-
-const createEmbedding = (text: string, dimensions = 384): number[] => {
-  const tokens = normalizeText(text.toLowerCase()).split(/\W+/).filter(Boolean);
-  const vector = new Array<number>(dimensions).fill(0);
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    let hash = 0;
-    for (let j = 0; j < token.length; j += 1) {
-      hash = (hash * 31 + token.charCodeAt(j)) >>> 0;
-    }
-    vector[hash % dimensions] += 1;
-  }
-  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
-  return vector.map((value) => Number((value / magnitude).toFixed(6)));
-};
-
 const vectorCollection = (): Collection => IntelligenceModel.db.collection(VECTOR_COLLECTION);
 
 export async function saveIntelligence(document: IntelligenceDocumentV2): Promise<IntelligenceDocument> {
@@ -122,6 +105,85 @@ export async function saveVectorDocument(document: VectorDocument): Promise<Vect
   return saved as unknown as VectorDocument;
 }
 
+export async function replaceVectorDocumentsForArticle(sourceArticleId: string, documents: VectorDocument[]): Promise<VectorDocument[]> {
+  const collection = vectorCollection();
+  const ids = documents.map((document) => document.id);
+
+  if (documents.length === 0) {
+    await collection.deleteMany({ sourceArticleId });
+    return [];
+  }
+
+  await collection.bulkWrite(
+    documents.map((document) => ({
+      updateOne: {
+        filter: { id: document.id },
+        update: {
+          $set: {
+            id: document.id,
+            sourceArticleId: document.sourceArticleId,
+            headline: document.headline,
+            content: document.content,
+            summary: document.summary,
+            embedding: document.embedding,
+            countriesInvolved: document.countriesInvolved,
+            relationWithIndia: document.relationWithIndia,
+            oilPetroleumImpact: document.oilPetroleumImpact,
+            financeEconomicImpact: document.financeEconomicImpact,
+            shippingMaritimeImpact: document.shippingMaritimeImpact,
+            tradeCorridorsAffected: document.tradeCorridorsAffected,
+            eventType: document.eventType,
+            severity: document.severity,
+            confidence: document.confidence,
+            isPermanent: document.isPermanent,
+            keywords: document.keywords,
+            metadata: document.metadata,
+            updatedAt: new Date().toISOString(),
+          },
+          $setOnInsert: {
+            createdAt: document.createdAt,
+          },
+        },
+        upsert: true,
+      },
+    }))
+  );
+
+  await collection.deleteMany({ sourceArticleId, id: { $nin: ids } });
+  return (await collection.find({ id: { $in: ids } }).toArray()) as unknown as VectorDocument[];
+}
+
+export async function findExistingVectorArticleIds(sourceArticleIds: string[]): Promise<Set<string>> {
+  if (sourceArticleIds.length === 0) return new Set();
+  const collection = vectorCollection();
+  const docs = await collection
+    .find({ sourceArticleId: { $in: sourceArticleIds } }, { projection: { _id: 0, sourceArticleId: 1 } })
+    .toArray();
+  return new Set(docs.map((doc) => String(doc.sourceArticleId)));
+}
+
+export async function getRecentVectorCandidates(days = Number(process.env.GRIA_DEDUPE_WINDOW_DAYS ?? 14)): Promise<Array<Pick<VectorDocument, "sourceArticleId" | "headline" | "content">>> {
+  const collection = vectorCollection();
+  const since = new Date(Date.now() - Math.max(1, days) * 86_400_000).toISOString();
+  const docs = await collection
+    .find(
+      {
+        $or: [{ updatedAt: { $gte: since } }, { "metadata.publishedAt": { $gte: since } }],
+      },
+      {
+        projection: {
+          _id: 0,
+          sourceArticleId: 1,
+          headline: 1,
+          content: 1,
+        },
+      }
+    )
+    .limit(500)
+    .toArray();
+  return docs as unknown as Array<Pick<VectorDocument, "sourceArticleId" | "headline" | "content">>;
+}
+
 export async function vectorSearch(queryEmbedding: number[], limit = 10): Promise<VectorDocument[]> {
   const collection = vectorCollection();
   try {
@@ -136,7 +198,31 @@ export async function vectorSearch(queryEmbedding: number[], limit = 10): Promis
             limit,
           },
         },
-        { $project: { score: { $meta: "vectorSearchScore" }, _id: 0 } },
+        {
+          $project: {
+            _id: 0,
+            id: 1,
+            sourceArticleId: 1,
+            headline: 1,
+            content: 1,
+            summary: 1,
+            countriesInvolved: 1,
+            relationWithIndia: 1,
+            oilPetroleumImpact: 1,
+            financeEconomicImpact: 1,
+            shippingMaritimeImpact: 1,
+            tradeCorridorsAffected: 1,
+            eventType: 1,
+            severity: 1,
+            confidence: 1,
+            isPermanent: 1,
+            keywords: 1,
+            metadata: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            score: { $meta: "vectorSearchScore" },
+          },
+        },
       ])
       .toArray();
     return results as unknown as VectorDocument[];
@@ -262,8 +348,24 @@ export async function deleteNewsSource(name: string): Promise<boolean> {
   return result.deletedCount > 0;
 }
 
-export async function updateNewsSourceFetchTime(name: string, lastFetchedAt: Date): Promise<void> {
-  await NewsSourceModel.updateOne({ name }, { $set: { lastFetchedAt, status: "active" } });
+export async function updateNewsSourceFetchTime(
+  name: string,
+  lastFetchedAt: Date,
+  options: { type?: NewsSourceDocument["type"]; baseUrl?: string } = {}
+): Promise<void> {
+  await NewsSourceModel.updateOne(
+    { name },
+    {
+      $set: { lastFetchedAt, status: "active", enabled: true },
+      $setOnInsert: {
+        name,
+        type: options.type ?? "RSS",
+        baseUrl: options.baseUrl ?? name,
+        fetchInterval: Number(process.env.GRIA_NEWS_CRON_MINUTES ?? 35),
+      },
+    },
+    { upsert: true }
+  );
 }
 
 export async function upsertPipelineLogStatus(startTime: Date, fields: Partial<PipelineLogDocument>): Promise<void> {

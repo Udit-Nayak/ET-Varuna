@@ -7,7 +7,11 @@
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "gria:backfill-vectors": "ts-node src/scripts/backfillGriaVectors.ts",
+    "gria:run-once": "ts-node src/scripts/runGriaPipelineOnce.ts",
+    "gria:verify-vector-search": "ts-node src/scripts/verifyGriaVectorSearch.ts",
+    "gria:verify-fetch": "ts-node src/scripts/verifyGriaFetch.ts"
   },
   "dependencies": {
     "axios": "^1.18.1",

@@ -59,6 +59,9 @@ const isTradingVesselType = (type?: number) => type !== undefined && type >= 70 
 const STALE_MS = 15 * 60 * 1000;
 const BROADCAST_INTERVAL_MS = 4000;
 const MAX_BROADCAST_VESSELS = 5000;
+const SIMULATION_ENABLED =
+  process.env.AIS_SIMULATION_ENABLED === "true" ||
+  (!process.env.AISSTREAM_API_KEY && process.env.AIS_SIMULATION_ENABLED !== "false");
 
 const SIMULATED_ROUTES: [number, number][][] = [
   // Route 1: Persian Gulf to Mumbai
@@ -203,6 +206,8 @@ const DESTINATIONS = [
 
 class AisStreamService {
   private vessels = new Map<number, VesselState>();
+  private liveMmsis = new Set<number>();
+  private simulatedMmsis = new Set<number>();
   private staticDataByMmsi = new Map<number, StaticVesselData>();
   private listeners: Listener[] = [];
   private ws: WebSocket | null = null;
@@ -215,7 +220,9 @@ class AisStreamService {
   private staticDataCount = 0;
 
   start() {
-    this.initSimulatedFleet();
+    if (SIMULATION_ENABLED) {
+      this.initSimulatedFleet();
+    }
 
     const apiKey = process.env.AISSTREAM_API_KEY;
     if (!apiKey) {
@@ -226,7 +233,9 @@ class AisStreamService {
 
     // Periodically update simulated fleet and broadcast
     setInterval(() => {
-      this.updateSimulatedFleet();
+      if (SIMULATION_ENABLED) {
+        this.updateSimulatedFleet();
+      }
       this.broadcast();
     }, BROADCAST_INTERVAL_MS);
 
@@ -277,6 +286,7 @@ class AisStreamService {
         draught,
         isTanker
       });
+      this.simulatedMmsis.add(mmsi);
     }
   }
 
@@ -330,6 +340,7 @@ class AisStreamService {
       this.ws?.send(
         JSON.stringify({
           APIKey: apiKey,
+          Apikey: apiKey,
           BoundingBoxes: BOUNDING_BOXES,
           FilterMessageTypes: [...POSITION_MESSAGE_TYPES, ...STATIC_MESSAGE_TYPES],
         })
@@ -390,6 +401,7 @@ class AisStreamService {
         isTanker: isTankerType(type),
         lastUpdate: Date.now(),
       });
+      this.liveMmsis.add(mmsi);
     }
 
     if (STATIC_MESSAGE_TYPES.includes(msg.MessageType)) {
@@ -408,6 +420,7 @@ class AisStreamService {
       };
 
       this.staticDataByMmsi.set(mmsi, staticData);
+      this.liveMmsis.add(mmsi);
 
       if (!existing) return;
 
@@ -433,18 +446,21 @@ class AisStreamService {
   private cleanupStale() {
     const now = Date.now();
     for (const [mmsi, v] of this.vessels) {
-      const isSimulated = this.simulatedFleet.some(sim => sim.mmsi === mmsi);
+      const isSimulated = this.simulatedMmsis.has(mmsi);
       if (!isSimulated && now - v.lastUpdate > STALE_MS) {
         this.vessels.delete(mmsi);
+        this.liveMmsis.delete(mmsi);
       }
     }
   }
 
   private logStats() {
     const total = this.vessels.size;
+    const live = Array.from(this.liveMmsis).filter((mmsi) => this.vessels.has(mmsi)).length;
+    const simulated = Array.from(this.simulatedMmsis).filter((mmsi) => this.vessels.has(mmsi)).length;
     const tankers = Array.from(this.vessels.values()).filter((v) => v.isTanker).length;
     console.log(
-      `[AIS stats] total vessels tracked: ${total} | tankers: ${tankers} | ` +
+      `[AIS stats] total vessels tracked: ${total} | live: ${live} | simulated: ${simulated} | tankers: ${tankers} | ` +
         `PositionReports received: ${this.positionReportCount} | ShipStaticData received: ${this.staticDataCount} | ` +
         `broadcast cap: ${MAX_BROADCAST_VESSELS}`
     );

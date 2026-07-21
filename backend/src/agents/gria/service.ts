@@ -2,22 +2,125 @@ import { preprocessArticles } from "./preprocessor";
 import { fetchNews } from "./newsFetcher";
 import { parseHuggingFaceOutput } from "./parser";
 import { generateRawOutput } from "./model";
-import { PipelineInput, PipelineResult, NewsArticle, StructuredExtractionResult, AnalysisResult, IntelligenceDocumentV2, VectorDocument } from "./types";
-import { deleteById, findByCorridor, findByCountry, findById, getHistory as getRiskHistory, getLatest as getLatestRisk, saveIntelligence, saveVectorDocument, updateNewsSourceFetchTime, upsertPipelineLogStatus, vectorSearch } from "./mongoRepository";
+import { PipelineInput, PipelineResult, NewsArticle, AnalysisResult, VectorDocument } from "./types";
+import { deleteById, findByCorridor, findByCountry, findById, findExistingVectorArticleIds, getHistory as getRiskHistory, getLatest as getLatestRisk, getNewsSources, getRecentVectorCandidates, replaceVectorDocumentsForArticle, updateNewsSourceFetchTime, upsertPipelineLogStatus, vectorSearch } from "./mongoRepository";
 import { getHighRiskCount } from "./analysisUtils";
+import { buildQueryEmbedding, vectorDocumentsFromArticle } from "./vectorizer";
 
-const buildEmbedding = (text: string, dimensions = 384): number[] => {
-  const tokens = text.toLowerCase().replace(/\s+/g, " ").split(/\W+/).filter(Boolean);
-  const vector = new Array<number>(dimensions).fill(0);
-  for (const token of tokens) {
-    let hash = 0;
-    for (let i = 0; i < token.length; i += 1) {
-      hash = (hash * 33 + token.charCodeAt(i)) >>> 0;
+const textSimilarity = (left: string, right: string): number => {
+  const a = new Set(left.toLowerCase().split(/\W+/).filter(Boolean));
+  const b = new Set(right.toLowerCase().split(/\W+/).filter(Boolean));
+  const shared = [...a].filter((token) => b.has(token)).length;
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : shared / union;
+};
+
+const sourceLastFetchedMap = async (): Promise<Record<string, string>> => {
+  const sources = await getNewsSources();
+  return Object.fromEntries(
+    sources
+      .filter((source) => source.lastFetchedAt)
+      .flatMap((source) => [
+        [source.name, String(source.lastFetchedAt)],
+        [source.name.toLowerCase(), String(source.lastFetchedAt)],
+        [source.baseUrl, String(source.lastFetchedAt)],
+        [source.baseUrl.toLowerCase(), String(source.lastFetchedAt)],
+      ])
+  );
+};
+
+const filterAlreadyVectorized = async (articles: NewsArticle[]): Promise<{ articles: NewsArticle[]; skippedExisting: number; skippedSimilar: number }> => {
+  const existingIds = await findExistingVectorArticleIds(articles.map((article) => article.id));
+  const recentCandidates = await getRecentVectorCandidates();
+  let skippedExisting = 0;
+  let skippedSimilar = 0;
+  const filtered: NewsArticle[] = [];
+
+  for (const article of articles) {
+    if (existingIds.has(article.id)) {
+      skippedExisting += 1;
+      continue;
     }
-    vector[hash % dimensions] += 1;
+
+    const similar = recentCandidates.some((candidate) => {
+      if (candidate.sourceArticleId === article.id) return true;
+      const titleSimilarity = textSimilarity(candidate.headline ?? "", article.title);
+      const contentSimilarity = textSimilarity(candidate.content ?? "", `${article.title} ${article.description} ${article.content}`);
+      return titleSimilarity >= 0.92 || contentSimilarity >= 0.86;
+    });
+    if (similar) {
+      skippedSimilar += 1;
+      continue;
+    }
+
+    filtered.push(article);
   }
-  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
-  return vector.map((value) => Number((value / magnitude).toFixed(6)));
+
+  return { articles: filtered, skippedExisting, skippedSimilar };
+};
+
+const lexicalScore = (query: string, document: VectorDocument): number => {
+  const queryTokens = new Set(query.toLowerCase().split(/\W+/).filter((token) => token.length > 2));
+  const text = `${document.headline} ${document.summary} ${document.content} ${document.keywords.join(" ")} ${document.tradeCorridorsAffected.join(" ")}`.toLowerCase();
+  return [...queryTokens].reduce((score, token) => score + (text.includes(token) ? 1 : 0), 0);
+};
+
+const geminiRerank = async (query: string, documents: VectorDocument[], limit: number): Promise<VectorDocument[] | null> => {
+  if (process.env.GRIA_RERANK_PROVIDER !== "gemini" || !process.env.GEMINI_API_KEY || documents.length === 0) return null;
+
+  try {
+    const prompt = JSON.stringify({
+      query,
+      documents: documents.map((document, index) => ({
+        index,
+        headline: document.headline,
+        summary: document.summary,
+        eventType: document.eventType,
+        severity: document.severity,
+        corridors: document.tradeCorridorsAffected,
+        countries: document.countriesInvolved,
+        content: document.content.slice(0, 700),
+      })),
+      instruction: `Return JSON only: {"rankedIndexes":[number,...]}. Pick the ${limit} most useful documents for GRIA to pass to DSM, SROA and APO.`,
+    });
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || "gemini-2.0-flash"}:generateContent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": process.env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
+      }),
+    });
+    const payload = (await response.json()) as any;
+    if (!response.ok) return null;
+    const text = String(payload?.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? "").join("") ?? "");
+    const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
+    const parsed = JSON.parse(jsonText) as { rankedIndexes?: number[] };
+    const ranked = (parsed.rankedIndexes ?? [])
+      .map((index) => documents[index])
+      .filter((document): document is VectorDocument => Boolean(document));
+    return ranked.length > 0 ? ranked.slice(0, limit) : null;
+  } catch (error) {
+    console.warn("[GRIA rerank] Gemini rerank skipped:", error);
+    return null;
+  }
+};
+
+const rerankVectorMatches = async (query: string, documents: VectorDocument[], limit: number): Promise<VectorDocument[]> => {
+  const geminiRanked = await geminiRerank(query, documents, limit);
+  if (geminiRanked) return geminiRanked;
+
+  return documents
+    .map((document) => ({
+      document,
+      score: Number((document as any).score ?? document.metadata?.score ?? 0) + lexicalScore(query, document) * 0.08,
+    }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map(({ document, score }) => ({ ...document, metadata: { ...document.metadata, rerankScore: score } }));
 };
 
 const extractWithGemma = async (article: NewsArticle): Promise<AnalysisResult> => {
@@ -39,109 +142,53 @@ const extractWithGemma = async (article: NewsArticle): Promise<AnalysisResult> =
   };
 };
 
-const toIntelligenceDocument = (article: NewsArticle, analysis: AnalysisResult): IntelligenceDocumentV2 => ({
-  id: article.id,
-  sourceArticleId: article.id,
-  headline: article.title,
-  content: article.content,
-  summary: analysis.parsed.shortSummary || article.description || article.content,
-  countriesInvolved: analysis.parsed.countriesInvolved,
-  relationWithIndia: analysis.parsed.relationWithIndia,
-  oilPetroleumImpact: analysis.parsed.oilPetroleumImpact,
-  financeEconomicImpact: analysis.parsed.financeEconomicImpact,
-  shippingMaritimeImpact: analysis.parsed.shippingMaritimeImpact,
-  tradeCorridorsAffected: analysis.parsed.tradeCorridorsAffected,
-  eventType: analysis.parsed.eventType,
-  severity: analysis.parsed.severity,
-  confidence: analysis.parsed.confidence,
-  longTermImplications: analysis.parsed.longTermImplications,
-  isPermanent: analysis.parsed.isPermanent,
-  keywords: article.keywords,
-  metadata: {
-    source: article.source,
-    publishedAt: article.publishedAt,
-    language: article.language,
-    category: article.category,
-    rawOutput: analysis.rawOutput,
-  },
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
-
-const toVectorDocument = (article: NewsArticle, analysis: AnalysisResult): VectorDocument => {
-  const content = [
-    article.title,
-    article.description,
-    article.content,
-    analysis.parsed.shortSummary,
-    analysis.parsed.longTermImplications,
-    analysis.parsed.relationWithIndia,
-    analysis.parsed.oilPetroleumImpact,
-    analysis.parsed.financeEconomicImpact,
-    analysis.parsed.shippingMaritimeImpact,
-  ].join(" ");
-
-  return {
-    id: article.id,
-    sourceArticleId: article.id,
-    headline: article.title,
-    content,
-    summary: analysis.parsed.shortSummary || article.description || article.content,
-    embedding: buildEmbedding(content),
-    countriesInvolved: analysis.parsed.countriesInvolved,
-    relationWithIndia: analysis.parsed.relationWithIndia,
-    oilPetroleumImpact: analysis.parsed.oilPetroleumImpact,
-    financeEconomicImpact: analysis.parsed.financeEconomicImpact,
-    shippingMaritimeImpact: analysis.parsed.shippingMaritimeImpact,
-    tradeCorridorsAffected: analysis.parsed.tradeCorridorsAffected,
-    eventType: analysis.parsed.eventType,
-    severity: analysis.parsed.severity,
-    confidence: analysis.parsed.confidence,
-    isPermanent: false,
-    keywords: article.keywords,
-    metadata: {
-      source: article.source,
-      publishedAt: article.publishedAt,
-      language: article.language,
-      category: article.category,
-      rawOutput: analysis.rawOutput,
-    },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-};
-
-const runAnalysis = async (articles: NewsArticle[]): Promise<Array<{ articleId: string; analysis: AnalysisResult; stored: unknown }>> => {
-  const results: Array<{ articleId: string; analysis: AnalysisResult; stored: unknown }> = [];
+const runAnalysis = async (articles: NewsArticle[]): Promise<Array<{ articleId: string; analysis?: AnalysisResult; stored: unknown; vectorStored: number; error?: string }>> => {
+  const results: Array<{ articleId: string; analysis?: AnalysisResult; stored: unknown; vectorStored: number; error?: string }> = [];
   for (const article of articles) {
-    const analysis = await extractWithGemma(article);
-    const document = analysis.parsed.isPermanent ? toIntelligenceDocument(article, analysis) : toVectorDocument(article, analysis);
-    const stored = analysis.parsed.isPermanent ? await saveIntelligence(document as IntelligenceDocumentV2) : await saveVectorDocument(document as VectorDocument);
-    results.push({
-      articleId: article.id,
-      analysis,
-      stored,
-    });
+    try {
+      const analysis = await extractWithGemma(article);
+      const vectorDocuments = await vectorDocumentsFromArticle(article, analysis);
+      const storedVectors = await replaceVectorDocumentsForArticle(article.id, vectorDocuments);
+      results.push({
+        articleId: article.id,
+        analysis,
+        stored: {
+          vectors: storedVectors,
+        },
+        vectorStored: storedVectors.length,
+      });
+    } catch (error) {
+      results.push({
+        articleId: article.id,
+        stored: null,
+        vectorStored: 0,
+        error: error instanceof Error ? error.message : "Analysis failed",
+      });
+    }
   }
   return results;
 };
 
 export async function analyzeNews(payload: unknown): Promise<unknown> {
   const input = (payload ?? {}) as PipelineInput;
-  const fetched = await fetchNews(input);
+  const fetched = await fetchNews({ ...input, sourceLastFetchedAt: input.sourceLastFetchedAt ?? (await sourceLastFetchedMap()) });
   const preprocessed = preprocessArticles(fetched.articles);
-  const analyses = await runAnalysis(preprocessed.articles);
+  const deduped = await filterAlreadyVectorized(preprocessed.articles);
+  const analyses = await runAnalysis(deduped.articles);
   console.log("[GRIA] Analyze run summary", {
     fetched: fetched.articles.length,
     filteredOut: fetched.articles.length - preprocessed.articles.length,
-    sentToGemma: preprocessed.articles.length,
-    permanentStored: analyses.filter((item) => Boolean((item.stored as { isPermanent?: boolean } | null)?.isPermanent)).length,
-    vectorStored: analyses.filter((item) => Boolean(item.stored) && !(item.stored as { isPermanent?: boolean } | null)?.isPermanent).length,
+    skippedExisting: deduped.skippedExisting,
+    skippedSimilar: deduped.skippedSimilar,
+    sentToGemma: deduped.articles.length,
+    vectorStored: analyses.reduce((sum, item) => sum + item.vectorStored, 0),
   });
   return {
     fetched: fetched.articles.length,
     preprocessed: preprocessed.articles.length,
     removed: preprocessed.removed,
+    skippedExisting: deduped.skippedExisting,
+    skippedSimilar: deduped.skippedSimilar,
     analyzed: analyses.length,
     articles: preprocessed.articles,
     analyses,
@@ -161,22 +208,25 @@ export async function queryVectorKnowledge(payload: unknown): Promise<unknown> {
     throw new Error("query is required");
   }
 
-  const embedding = buildEmbedding(query);
-  return vectorSearch(embedding, limit);
+  const { embedding } = await buildQueryEmbedding(query);
+  const candidates = await vectorSearch(embedding, Math.min(50, Math.max(limit * 4, limit)));
+  return rerankVectorMatches(query, candidates, limit);
 }
 
 export async function runPipeline(payload: unknown): Promise<unknown> {
   const input = (payload ?? {}) as PipelineInput;
   const pipelineStart = new Date();
-  const fetched = await fetchNews(input);
+  const fetched = await fetchNews({ ...input, sourceLastFetchedAt: input.sourceLastFetchedAt ?? (await sourceLastFetchedMap()) });
   const preprocessed = preprocessArticles(fetched.articles);
-  const analyses = await runAnalysis(preprocessed.articles);
+  const deduped = await filterAlreadyVectorized(preprocessed.articles);
+  const analyses = await runAnalysis(deduped.articles);
   console.log("[GRIA] Pipeline run summary", {
     fetched: fetched.articles.length,
     filteredOut: fetched.articles.length - preprocessed.articles.length,
-    sentToGemma: preprocessed.articles.length,
-    permanentStored: analyses.filter((item) => Boolean((item.stored as { isPermanent?: boolean } | null)?.isPermanent)).length,
-    vectorStored: analyses.filter((item) => Boolean(item.stored) && !(item.stored as { isPermanent?: boolean } | null)?.isPermanent).length,
+    skippedExisting: deduped.skippedExisting,
+    skippedSimilar: deduped.skippedSimilar,
+    sentToGemma: deduped.articles.length,
+    vectorStored: analyses.reduce((sum, item) => sum + item.vectorStored, 0),
   });
 
   const executionEnd = new Date();
@@ -184,30 +234,37 @@ export async function runPipeline(payload: unknown): Promise<unknown> {
     startTime: pipelineStart,
     endTime: executionEnd,
     articlesFetched: fetched.articles.length,
-    articlesProcessed: preprocessed.articles.length,
+    articlesProcessed: deduped.articles.length,
     duplicatesRemoved: preprocessed.removed.duplicate,
-    successfulAnalyses: analyses.filter((item) => Boolean(item.stored)).length,
-    failedAnalyses: 0,
+    successfulAnalyses: analyses.filter((item) => item.vectorStored > 0).length,
+    failedAnalyses: analyses.filter((item) => item.error).length,
     executionTime: executionEnd.getTime() - pipelineStart.getTime(),
     status: "success",
   });
 
   for (const source of fetched.sourceStats) {
     if (source.fetched > 0) {
-      await updateNewsSourceFetchTime(source.source, executionEnd);
+      await updateNewsSourceFetchTime(source.sourceId ?? source.source, executionEnd, {
+        type: source.sourceType,
+        baseUrl: source.source,
+      });
     }
   }
 
   const result: PipelineResult = {
     summary: {
       fetched: fetched.articles.length,
-      preprocessed: preprocessed.articles.length,
-      extracted: analyses.length,
-      stored: analyses.filter((item) => Boolean(item.stored)).length,
+      preprocessed: deduped.articles.length,
+      extracted: analyses.filter((item) => item.analysis).length,
+      stored: analyses.reduce((sum, item) => sum + item.vectorStored, 0),
     },
     data: {
       analyses,
       highRiskCount: getHighRiskCount(preprocessed.articles),
+      vectorChunksStored: analyses.reduce((sum, item) => sum + item.vectorStored, 0),
+      skippedExisting: deduped.skippedExisting,
+      skippedSimilar: deduped.skippedSimilar,
+      failed: analyses.filter((item) => item.error),
     },
     articles: preprocessed.articles,
   };

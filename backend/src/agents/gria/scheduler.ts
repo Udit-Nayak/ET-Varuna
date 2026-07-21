@@ -1,6 +1,6 @@
 import { runPipeline } from "./service";
 
-const SCHEDULE_MS = 35 * 60 * 1000;
+const SCHEDULE_MS = Math.max(5, Number(process.env.GRIA_NEWS_CRON_MINUTES ?? 35)) * 60 * 1000;
 
 let schedulerInstance: NodeJS.Timeout | null = null;
 let running = false;

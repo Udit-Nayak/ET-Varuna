@@ -92,6 +92,7 @@ export interface ApiRequestBody {
   country?: string;
   corridor?: string;
   id?: string;
+  sourceLastFetchedAt?: Record<string, string>;
 }
 
 export interface ApiResponse<T> {
@@ -106,7 +107,9 @@ export interface PipelineInput extends ApiRequestBody {}
 export interface FetchResult {
   articles: NewsArticle[];
   sourceStats: Array<{
+    sourceId?: string;
     source: string;
+    sourceType?: NewsSourceProviderType;
     fetched: number;
     normalized: number;
     errors: string[];

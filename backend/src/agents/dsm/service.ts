@@ -4,6 +4,7 @@ import { getLivePriceSnapshot } from "../shared/livePriceRepository";
 import { aggregateDsmContext, simulateDsm } from "./engine";
 import { getMockDsmEvents } from "./mockData";
 import { buildDsmConfidence, classifyDsmEvent, explainDsmOutput, formatDsmInput, summarizeHistoricalAnalysis } from "./llm";
+import { buildQueryEmbedding } from "../gria/vectorizer";
 import {
   DsmEventClassification,
   DsmHistoricalAnalysis,
@@ -39,20 +40,6 @@ const normalizeSeverity = (value: unknown): DsmSeverity => {
 };
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
-
-const createEmbedding = (text: string, dimensions = 384): number[] => {
-  const tokens = normalizeText(text.toLowerCase()).split(/\W+/).filter(Boolean);
-  const vector = new Array<number>(dimensions).fill(0);
-  for (const token of tokens) {
-    let hash = 0;
-    for (let index = 0; index < token.length; index += 1) {
-      hash = (hash * 31 + token.charCodeAt(index)) >>> 0;
-    }
-    vector[hash % dimensions] += 1;
-  }
-  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
-  return vector.map((value) => Number((value / magnitude).toFixed(6)));
-};
 
 const dotProduct = (left: number[] = [], right: number[] = []): number =>
   left.reduce((sum, value, index) => sum + value * (right[index] ?? 0), 0);
@@ -167,7 +154,7 @@ const retrieveVectorEvents = async (input: DsmSimulationInput, limit: number): P
     return [];
   }
 
-  const queryEmbedding = createEmbedding(queryText);
+  const { embedding: queryEmbedding } = await buildQueryEmbedding(queryText);
 
   try {
     const vectorMatches = await collection
