@@ -46,6 +46,11 @@ const CORRIDOR_LABELS: Record<string, string> = {
   "persian-gulf": "Persian Gulf",
   "persian-gulf-inner": "Persian Gulf",
   "cape-of-good-hope": "Cape of Good Hope",
+  panama: "Panama Canal",
+  "english-channel": "English Channel",
+  gibraltar: "Strait of Gibraltar",
+  bosphorus: "Bosphorus Strait",
+  "south-china-sea": "South China Sea",
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
@@ -59,6 +64,12 @@ const inferCorridorFromPolygon = (polygon?: number[][]): string | null => {
   if (lng >= 55 && lng <= 58 && lat >= 26 && lat <= 28) return "Strait of Hormuz";
   if (lng >= 42 && lng <= 45 && lat >= 11 && lat <= 14) return "Bab-el-Mandeb";
   if (lng >= 99 && lng <= 105 && lat >= 1 && lat <= 6) return "Strait of Malacca";
+  if (lng >= -80.5 && lng <= -79.0 && lat >= 8.7 && lat <= 9.7) return "Panama Canal";
+  if (lng >= -1.8 && lng <= 2.2 && lat >= 49.4 && lat <= 51.4) return "English Channel";
+  if (lng >= -6.4 && lng <= -4.7 && lat >= 35.5 && lat <= 36.5) return "Strait of Gibraltar";
+  if (lng >= 28.5 && lng <= 29.5 && lat >= 40.7 && lat <= 41.5) return "Bosphorus Strait";
+  if (lng >= 17.0 && lng <= 20.3 && lat >= -35.5 && lat <= -33.0) return "Cape of Good Hope";
+  if (lng >= 108 && lng <= 121 && lat >= 6 && lat <= 20) return "South China Sea";
   return null;
 };
 
@@ -137,6 +148,7 @@ export const analyzeMapZone = async (input: MapZoneAnalysisInput): Promise<MapZo
     sroa_output: sroa,
     dsm_output: dsm,
     max_options: 3,
+    disrupted_zone_polygon: input.polygon,
   });
 
   return {

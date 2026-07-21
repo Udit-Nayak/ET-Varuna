@@ -14,6 +14,8 @@ export interface AgentChatMessageData {
   timestamp: number;
 }
 
+export type AgentWorkflowPayload = Record<string, any> | null;
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const makeId = () =>
@@ -26,6 +28,12 @@ export const corridorLabel = (corridorId: string | null) => {
     malacca: "Strait of Malacca",
     suez: "Suez Canal",
     "persian-gulf": "Persian Gulf",
+    panama: "Panama Canal",
+    "english-channel": "English Channel",
+    gibraltar: "Strait of Gibraltar",
+    bosphorus: "Bosphorus Strait",
+    "cape-of-good-hope": "Cape of Good Hope",
+    "south-china-sea": "South China Sea",
   };
 
   return corridorId ? labels[corridorId] ?? corridorId : "general maritime corridor";
@@ -171,6 +179,7 @@ export const useAgentWorkflowChat = () => {
     },
   ]);
   const [isBusy, setIsBusy] = useState(false);
+  const [latestWorkflow, setLatestWorkflow] = useState<AgentWorkflowPayload>(null);
   const timeoutsRef = useRef<number[]>([]);
 
   useEffect(
@@ -217,6 +226,7 @@ export const useAgentWorkflowChat = () => {
         throw new Error(payload.detail || payload.error || "Agent analysis failed");
       }
 
+      setLatestWorkflow(payload);
       setMessages((current) => current.filter((message) => message.id !== streamingId));
       buildAgentMessages(payload).forEach((message, index) => {
         const timeoutId = window.setTimeout(() => addMessage(setMessages, message), index * 400);
@@ -264,6 +274,7 @@ export const useAgentWorkflowChat = () => {
         throw new Error(payload.detail || payload.error || "Agent chat failed");
       }
 
+      setLatestWorkflow(payload);
       setMessages((current) => current.filter((message) => message.id !== streamingId));
       buildGeneralChatMessages(payload).forEach((message, index) => {
         const timeoutId = window.setTimeout(() => addMessage(setMessages, message), index * 350);
@@ -288,6 +299,7 @@ export const useAgentWorkflowChat = () => {
   }, []);
 
   const clearMessages = useCallback(() => {
+    setLatestWorkflow(null);
     setMessages([
       {
         id: makeId(),
@@ -299,5 +311,5 @@ export const useAgentWorkflowChat = () => {
     ]);
   }, []);
 
-  return { messages, isBusy, analyzeZoneWithAgents, askQuestion, clearMessages };
+  return { messages, isBusy, latestWorkflow, analyzeZoneWithAgents, askQuestion, clearMessages };
 };
