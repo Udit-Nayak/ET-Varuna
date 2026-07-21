@@ -108,7 +108,7 @@ type AgentQaMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
-  usedGemini?: boolean;
+  usedLlm?: boolean;
   generatedAt?: string;
 };
 
@@ -284,6 +284,7 @@ const AgentContextChat = ({
   disabled?: boolean;
   resetKey?: string | number | null;
 }) => {
+  const { user } = useAuth();
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<AgentQaMessage[]>([]);
   const [isAsking, setIsAsking] = useState(false);
@@ -300,7 +301,7 @@ const AgentContextChat = ({
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  const handleAsk = (event: FormEvent) => {
+  const handleAsk = async (event: FormEvent) => {
     event.preventDefault();
     const trimmed = question.trim();
     if (!trimmed || disabled || isAsking) return;
@@ -315,27 +316,29 @@ const AgentContextChat = ({
     setError("");
     setIsAsking(true);
 
-    fetch(`${API_BASE_URL}/api/chat/ask-agent-output`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent, question: trimmed, context: contextPayload }),
-    })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || payload.error || "Agent question failed");
-        const assistantMessage: AgentQaMessage = {
-          id: `${Date.now()}-assistant`,
-          role: "assistant",
-          text: String(payload.answer ?? "No answer returned."),
-          usedGemini: Boolean(payload.usedGemini),
-          generatedAt: payload.generatedAt,
-        };
-        setMessages((current) => [...current, assistantMessage]);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Agent question failed");
-      })
-      .finally(() => setIsAsking(false));
+    try {
+      if (!user) throw new Error("Sign in required");
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_BASE_URL}/api/chat/ask-agent-output`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ agent, question: trimmed, context: contextPayload }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || payload.error || "Agent question failed");
+      const assistantMessage: AgentQaMessage = {
+        id: `${Date.now()}-assistant`,
+        role: "assistant",
+        text: String(payload.answer ?? "No answer returned."),
+          usedLlm: Boolean(payload.usedGemini),
+        generatedAt: payload.generatedAt,
+      };
+      setMessages((current) => [...current, assistantMessage]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Agent question failed");
+    } finally {
+      setIsAsking(false);
+    }
   };
 
   return (
@@ -361,7 +364,7 @@ const AgentContextChat = ({
           {messages.map((message) => (
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[92%] rounded border border-amber/40 bg-amber/10 p-2 text-sm text-ink" : "max-w-[96%] rounded border border-border bg-base/80 p-2 text-sm leading-6 text-ink/90"}>
               <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted">
-                {message.role === "user" ? "You" : message.usedGemini ? "Gemini answer" : "Fallback answer"}
+                {message.role === "user" ? "You" : message.usedLlm ? "LLM answer" : "Detailed fallback"}
               </div>
               <div className="whitespace-pre-wrap">{message.text}</div>
             </div>

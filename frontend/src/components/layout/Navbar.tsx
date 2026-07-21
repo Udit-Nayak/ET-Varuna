@@ -4,6 +4,16 @@ import { useAuth } from "../../context/AuthContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
+type MiniChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  status?: "loading" | "done" | "error";
+};
+
+const makeChatId = () =>
+  crypto.randomUUID?.() ?? `mini-chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 const getInitials = (displayName?: string | null, email?: string | null) => {
   const source = displayName || email?.split("@")[0] || "Operator";
   const words = source.trim().split(/\s+/);
@@ -17,9 +27,10 @@ const Navbar = () => {
   const [open, setOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [chatMessages, setChatMessages] = useState<MiniChatMessage[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const displayName = profile?.displayName || user?.displayName || "Operator";
   const email = profile?.email || user?.email;
   const initials = useMemo(() => getInitials(displayName, email), [displayName, email]);
@@ -29,6 +40,11 @@ const Navbar = () => {
       window.setTimeout(() => chatInputRef.current?.focus(), 0);
     }
   }, [chatOpen]);
+
+  useEffect(() => {
+    const node = chatScrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [chatMessages, chatOpen]);
 
   const handleLogout = async () => {
     await logout();
@@ -41,11 +57,17 @@ const Navbar = () => {
     if (!trimmed || isBusy) return;
 
     setIsBusy(true);
-    setAnswer("");
+    setQuery("");
+    const assistantId = makeChatId();
+    setChatMessages((current) => [
+      ...current,
+      { id: makeChatId(), role: "user", content: trimmed, status: "done" },
+      { id: assistantId, role: "assistant", content: "Thinking...", status: "loading" },
+    ]);
     try {
       if (!user) throw new Error("Please sign in to use the AI assistant.");
       const token = await user.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/api/chat/ask`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/direct`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -55,9 +77,21 @@ const Navbar = () => {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || payload.error || "Chat request failed");
-      setAnswer(String(payload.final ?? "No answer returned."));
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? { ...message, content: String(payload.answer ?? "No info about it."), status: "done" }
+            : message
+        )
+      );
     } catch (error) {
-      setAnswer(error instanceof Error ? error.message : "Chat request failed");
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? { ...message, content: error instanceof Error ? error.message : "Chat request failed", status: "error" }
+            : message
+        )
+      );
     } finally {
       setIsBusy(false);
     }
@@ -123,20 +157,48 @@ const Navbar = () => {
             <div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-amber">AI assistant</div>
             </div>
-            <button
-              type="button"
-              onClick={() => setChatOpen(false)}
-              className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
-            >
-              Close
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setChatMessages([])}
+                className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
+              >
+                Close
+              </button>
+            </div>
           </div>
 
-          <div className="max-h-[28rem] overflow-y-auto px-4 py-3 text-sm text-ink">
-            {answer ? (
-              <pre className="whitespace-pre-wrap font-sans leading-6 text-ink">{answer}</pre>
+          <div ref={chatScrollRef} className="flex max-h-[28rem] min-h-64 flex-col gap-3 overflow-y-auto px-4 py-3 text-sm text-ink">
+            {chatMessages.length > 0 ? (
+              chatMessages.map((message) => (
+                <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[82%] rounded-md border px-3 py-2 leading-6 shadow-sm ${
+                      message.role === "user"
+                        ? "border-amber/50 bg-amber text-base"
+                        : message.status === "error"
+                          ? "border-risk/50 bg-risk/10 text-ink"
+                          : "border-border bg-base/80 text-ink"
+                    }`}
+                  >
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider opacity-75">
+                      {message.role === "user" ? "You" : "Assistant"}
+                    </div>
+                    <div className="whitespace-pre-wrap">{message.content}</div>
+                  </div>
+                </div>
+              ))
             ) : (
-              <div className="text-muted">Start a question to begin.</div>
+              <div className="my-auto rounded border border-dashed border-border bg-base/40 px-4 py-6 text-center text-muted">
+                Ask for a short definition, meaning, or full form.
+              </div>
             )}
           </div>
 
@@ -146,7 +208,7 @@ const Navbar = () => {
                 ref={chatInputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Ask anything..."
+                placeholder="Ask a term, e.g. BBL..."
                 className="min-w-0 flex-1 rounded border border-border bg-base px-3 py-2 text-sm text-ink outline-none placeholder:text-muted/60 focus:border-amber"
               />
               <button
