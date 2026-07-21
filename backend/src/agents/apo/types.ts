@@ -86,6 +86,7 @@ export interface ApoLlmReasoning {
   flags: string[];
   explanations: Record<string, string>;
   summary: string;
+  formatted_recommendation: string;
 }
 
 export interface ApoOutput {
@@ -102,5 +103,9 @@ export interface ApoOutput {
   price_as_of?: string;
   ranked_options: ApoCandidateScore[];
   llm_flags: string[];
+  llm_used: boolean;
+  llm_provider: string;
+  llm_summary: string;
+  formatted_recommendation: string;
   generated_at: string;
 }

@@ -16,6 +16,11 @@ export interface AgentZoneAnalysis {
   message?: string;
   corridor?: string;
   generatedAt?: string;
+  zoneGeometry?: {
+    pointCount: number;
+    center: [number, number] | null;
+    areaSqKm: number;
+  };
   griaMatches?: number;
   dsm?: {
     capacityLossPct: number;
@@ -30,6 +35,20 @@ export interface AgentZoneAnalysis {
     safetyThresholdBreached: boolean;
     sanityStatus: string;
     summary: string;
+  };
+  apo?: {
+    totalVolumeNeeded: number;
+    topOptions: Array<{
+      supplierName: string;
+      route: string;
+      landedCostPerBarrel: number;
+      transitDays: number;
+      routeRiskScore: number;
+      compositeScore: number;
+      volumeOffered: number;
+      explanation: string;
+    }>;
+    llmFlags: string[];
   };
   recommendation?: string;
 }

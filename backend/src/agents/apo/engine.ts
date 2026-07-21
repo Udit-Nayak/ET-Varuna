@@ -2,10 +2,10 @@ import { SroaRemainingGapDay } from "../sroa/types";
 import { ApoCandidateScore, ApoLivePrice, ApoRouteOption, ApoScoringWeights, ApoSupplier, ApoSupportingEvent } from "./types";
 
 export const DEFAULT_APO_WEIGHTS: ApoScoringWeights = {
-  price: 0.3,
-  transit: 0.25,
+  price: 0.2,
+  transit: 0.4,
   route_risk: 0.2,
-  capacity: 0.15,
+  capacity: 0.1,
   compatibility: 0.1,
 };
 
@@ -65,7 +65,8 @@ export const scoreCandidate = (input: ScoreCandidateInput): ApoCandidateScore =>
   const landedCost = price.price_per_barrel * (1 + route.port_congestion_factor);
   const priceScore = clamp(cheapestPrice / Math.max(landedCost, 1));
   const baseTransitScore = clamp(fastestTransitDays / Math.max(route.transit_days, 1));
-  const durationPenalty = route.transit_days > disruptionDurationDays ? clamp(disruptionDurationDays / route.transit_days) : 1;
+  const durationRatio = route.transit_days > disruptionDurationDays ? clamp(disruptionDurationDays / route.transit_days) : 1;
+  const durationPenalty = route.transit_days > disruptionDurationDays ? durationRatio * durationRatio * 0.65 : 1;
   const transitScore = clamp(baseTransitScore * durationPenalty);
   const riskScore = clamp(1 - routeRiskScore / 100);
   const volumeOffered = Math.round(Math.min(totalVolumeNeeded, supplier.base_capacity_volume_per_day * Math.max(1, disruptionDurationDays)));
@@ -82,8 +83,6 @@ export const scoreCandidate = (input: ScoreCandidateInput): ApoCandidateScore =>
     weights.route_risk * riskScore +
     weights.capacity * capacityScore +
     weights.compatibility * compatibilityScore;
-
-  const optionKey = `${supplier.supplier_id}:${route.route_id}`;
 
   return {
     supplier_id: supplier.supplier_id,

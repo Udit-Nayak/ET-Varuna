@@ -1,8 +1,10 @@
 import { queryVectorKnowledge } from "../gria/service";
 import { runDsmSimulation } from "../dsm/service";
 import { runSroaOptimization } from "../sroa/service";
+import { runApoRecommendation } from "../apo/service";
 import { DsmSimulationOutput } from "../dsm/types";
 import { SroaOutput, SroaPolicy } from "../sroa/types";
+import { ApoOutput } from "../apo/types";
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -16,14 +18,6 @@ interface NormalizedQuestion {
   tensionPct: number;
   durationDays: number;
   policy: SroaPolicy;
-}
-
-interface ApoOutput {
-  status: "heuristic";
-  summary: string;
-  recommendedActions: string[];
-  alternateRoutes: string[];
-  caveat: string;
 }
 
 export interface AgentChatAnswer {
@@ -196,29 +190,10 @@ const summarizeGria = (matches: unknown[], normalized: NormalizedQuestion): stri
   return `GRIA retrieved ${matches.length} stored intelligence match${matches.length === 1 ? "" : "es"} for ${normalized.corridor}.`;
 };
 
-const buildApoOutput = (normalized: NormalizedQuestion, dsm: DsmSimulationOutput, sroa: SroaOutput): ApoOutput => {
-  const severe = dsm.capacity_loss_pct >= 65 || sroa.safety_threshold_breached;
-  const hormuz = /hormuz|persian gulf/i.test(normalized.corridor);
-  const redSea = /red sea|mandeb|suez/i.test(normalized.corridor);
-  const alternateRoutes = hormuz
-    ? ["Increase non-Gulf intake through Red Sea/Cape schedules where feasible", "Prioritize west-coast refinery cargoes from Atlantic Basin suppliers", "Stage Fujairah/Jebel Ali exposure review"]
-    : redSea
-    ? ["Evaluate Cape of Good Hope bypass for high-priority cargo", "Rebalance arrivals through west-coast Indian ports", "Increase schedule buffers for Suez-linked cargo"]
-    : ["Diversify cargo windows across west and east coast terminals", "Increase supplier optionality for next two procurement cycles", "Keep demurrage and freight-risk buffers active"];
-
-  return {
-    status: "heuristic",
-    summary: severe
-      ? "APO recommends activating alternate sourcing and route planning because DSM/SROA show material disruption stress."
-      : "APO recommends monitoring and preparing alternate procurement options without immediate full reroute activation.",
-    recommendedActions: [
-      severe ? "Open alternate supplier shortlist immediately" : "Prepare alternate supplier shortlist",
-      sroa.safety_threshold_breached ? "Cover residual supply gap through procurement alternatives" : "Keep reserve drawdown within SROA safety bounds",
-      "Re-run this workflow when GRIA intelligence or vessel conditions change",
-    ],
-    alternateRoutes,
-    caveat: "APO backend is not a dedicated module in this repo yet; this is a transparent orchestration heuristic derived from GRIA, DSM, and SROA outputs.",
-  };
+const summarizeApo = (apo: ApoOutput): string => {
+  const top = apo.ranked_options[0];
+  if (!top) return "APO found no feasible procurement alternative for the residual supply gap.";
+  return "APO recommends " + top.supplier_name + " via " + top.via + ", covering " + Math.round(top.volume_offered).toLocaleString("en-US") + " barrels at USD " + top.landed_cost_per_barrel.toFixed(2) + "/bbl with " + top.transit_days + "d transit and route risk " + top.route_risk_score.toFixed(0) + "/100.";
 };
 
 const fallbackFinal = (normalized: NormalizedQuestion, griaSummary: string, dsm: DsmSimulationOutput, sroa: SroaOutput, apo: ApoOutput): string =>
@@ -228,7 +203,7 @@ const fallbackFinal = (normalized: NormalizedQuestion, griaSummary: string, dsm:
     `GRIA: ${griaSummary}`,
     `DSM: ${dsm.capacity_loss_pct}% capacity loss for ${dsm.duration_days} days on ${dsm.corridor}. ${dsm.summary}`,
     `SROA: ${sroa.policy} reserve policy releases ${Math.round(sroa.total_released_volume).toLocaleString("en-US")} barrels and leaves ${sroa.reserve_after_plan_days.toFixed(2)} reserve days. ${sroa.safety_threshold_breached ? "Safety threshold is under stress." : "Safety threshold remains protected."}`,
-    `APO: ${apo.summary} Actions: ${apo.recommendedActions.join("; ")}.`,
+    summarizeApo(apo),
   ].join("\n");
 
 const synthesizeFinal = async (
@@ -293,7 +268,12 @@ export const answerAgentChat = async (question: string): Promise<AgentChatAnswer
     dsm_output: dsm,
     scenario_text: normalized.scenarioText,
   });
-  const apo = buildApoOutput(normalized, dsm, sroa);
+  const apo = await runApoRecommendation({
+    corridor: normalized.corridor,
+    sroa_output: sroa,
+    dsm_output: dsm,
+    max_options: 3,
+  });
   const final =
     (await synthesizeFinal(question, normalized, griaSummary, dsm, sroa, apo)) ??
     fallbackFinal(normalized, griaSummary, dsm, sroa, apo);

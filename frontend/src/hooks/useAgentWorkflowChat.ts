@@ -34,6 +34,43 @@ export const corridorLabel = (corridorId: string | null) => {
 const formatVolume = (value: unknown) =>
   `${Math.round(Number(value) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} bbl`;
 
+const formatUsd = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? `USD ${number.toFixed(2)}/bbl` : "price n/a";
+};
+
+const formatApoPayload = (apo: any) => {
+  if (typeof apo?.formatted_recommendation === "string" && apo.formatted_recommendation.trim()) {
+    const providerLine = apo.llm_used ? `\n\nFormatted by ${apo.llm_provider ?? "LLM"}.` : "";
+    return `${apo.formatted_recommendation.trim()}${providerLine}`;
+  }
+
+  const options = Array.isArray(apo?.ranked_options) ? apo.ranked_options.slice(0, 3) : [];
+  const totalNeeded = Number(apo?.total_volume_needed ?? 0);
+  if (options.length === 0) {
+    return `APO found no feasible procurement option for ${formatVolume(totalNeeded)} residual supply gap.`;
+  }
+
+  const lines = [
+    `APO procurement ranking for ${apo?.corridor ?? "the selected corridor"}.`,
+    `Residual requirement: ${formatVolume(totalNeeded)}.`,
+  ];
+
+  options.forEach((option: any, index: number) => {
+    lines.push(
+      `${index + 1}. ${option.supplier_name ?? "Unknown supplier"} via ${option.via ?? "unknown route"}`,
+      `   Covers ${formatVolume(option.volume_offered)} | ${formatUsd(option.landed_cost_per_barrel)} | ${Number(option.transit_days ?? 0)}d transit | route risk ${Number(option.route_risk_score ?? 0).toFixed(0)}/100 | score ${Number(option.composite_score ?? 0).toFixed(3)}`,
+      option.explanation ? `   Reason: ${option.explanation}` : ""
+    );
+  });
+
+  if (Array.isArray(apo?.llm_flags) && apo.llm_flags.length > 0) {
+    lines.push(`Flags: ${apo.llm_flags.join("; ")}`);
+  }
+
+  return lines.filter(Boolean).join("\n");
+};
+
 const addMessage = (
   setMessages: Dispatch<SetStateAction<AgentChatMessageData[]>>,
   message: Omit<AgentChatMessageData, "id" | "timestamp">
@@ -47,8 +84,8 @@ const buildAgentMessages = (payload: any): Array<Omit<AgentChatMessageData, "id"
   const griaMatches = Array.isArray(payload.gria?.matches) ? payload.gria.matches.length : 0;
   const dsm = payload.dsm ?? {};
   const sroa = payload.sroa ?? {};
+  const apo = payload.apo ?? {};
   const safetyBreached = Boolean(sroa.safety_threshold_breached);
-  const severe = Number(dsm.capacity_loss_pct ?? 0) >= 65 || safetyBreached;
 
   return [
     {
@@ -71,7 +108,7 @@ const buildAgentMessages = (payload: any): Array<Omit<AgentChatMessageData, "id"
     {
       role: "apo",
       status: "done",
-      content: `${severe ? "APO recommends activating alternate sourcing and route planning." : "APO recommends preparing alternate sourcing options while monitoring the zone."}\nActions:\n- ${severe ? "Open alternate supplier shortlist immediately" : "Prepare alternate supplier shortlist"}\n- ${safetyBreached ? "Cover residual supply gap through procurement alternatives" : "Keep reserve drawdown inside SROA safety bounds"}\n- Re-run the workflow if vessel exposure or GRIA intelligence changes\n\nAPO is currently a transparent orchestration heuristic derived from GRIA, DSM, and SROA outputs.`,
+      content: formatApoPayload(apo),
     },
     {
       role: "system",
@@ -113,7 +150,7 @@ const buildGeneralChatMessages = (payload: any): Array<Omit<AgentChatMessageData
     {
       role: "apo",
       status: "done",
-      content: `${apo.summary ?? "APO prepared procurement alternatives."}\nActions:\n${Array.isArray(apo.recommendedActions) ? apo.recommendedActions.map((item: string) => `- ${item}`).join("\n") : "n/a"}\nRoutes:\n${Array.isArray(apo.alternateRoutes) ? apo.alternateRoutes.map((item: string) => `- ${item}`).join("\n") : "n/a"}\n${apo.caveat ?? ""}`,
+      content: formatApoPayload(apo),
     },
     {
       role: "system",

@@ -103,6 +103,10 @@ export const runApoRecommendation = async (input: ApoInput): Promise<ApoOutput> 
     price_as_of: priceAsOf,
     ranked_options: rankedWithExplanations,
     llm_flags: reasoning.flags,
+    llm_used: reasoning.used_llm,
+    llm_provider: reasoning.provider,
+    llm_summary: reasoning.summary,
+    formatted_recommendation: reasoning.formatted_recommendation,
     generated_at: new Date().toISOString(),
   };
 
@@ -117,5 +121,6 @@ export const getApoStatus = async () => {
     route_count: suppliers.reduce((sum, supplier) => sum + supplier.route_options.length, 0),
     default_weights: normalizeApoWeights(),
     llm_enabled: process.env.APO_LLM_ENABLED !== "false",
+    llm_provider: process.env.APO_LLM_PROVIDER ?? (process.env.GEMINI_API_KEY ? "gemini" : "huggingface"),
   };
 };

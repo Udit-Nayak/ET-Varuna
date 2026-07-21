@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import TensionDrawer from "../components/TensionDrawer";
 import TensionZonePanel from "../components/TensionZonePanel";
@@ -187,10 +187,23 @@ const vesselMatchesCountry = (
 };
 
 
+const zoneAnalysisSignature = (zone: TensionZone): string =>
+  JSON.stringify({
+    polygon: zone.polygon.map(([lng, lat]) => [Number(lng.toFixed(4)), Number(lat.toFixed(4))]),
+    corridorId: zone.corridorId,
+    tensionPct: zone.tensionPct,
+    durationDays: zone.durationDays,
+  });
+
 const summarizeAgentResponse = (payload: any): AgentZoneAnalysis => ({
   status: "ready",
   corridor: String(payload.corridor ?? ""),
   generatedAt: String(payload.generatedAt ?? ""),
+  zoneGeometry: {
+    pointCount: Array.isArray(payload.zoneGeometry?.polygon) ? payload.zoneGeometry.polygon.length : 0,
+    center: Array.isArray(payload.zoneGeometry?.center) ? payload.zoneGeometry.center as [number, number] : null,
+    areaSqKm: Number(payload.zoneGeometry?.approximate_area_sq_km ?? 0),
+  },
   griaMatches: Array.isArray(payload.gria?.matches) ? payload.gria.matches.length : 0,
   dsm: {
     capacityLossPct: Number(payload.dsm?.capacity_loss_pct ?? 0),
@@ -205,6 +218,22 @@ const summarizeAgentResponse = (payload: any): AgentZoneAnalysis => ({
     safetyThresholdBreached: Boolean(payload.sroa?.safety_threshold_breached),
     sanityStatus: String(payload.sroa?.sanity_check?.status ?? ""),
     summary: String(payload.sroa?.summary ?? ""),
+  },
+  apo: {
+    totalVolumeNeeded: Number(payload.apo?.total_volume_needed ?? 0),
+    topOptions: Array.isArray(payload.apo?.ranked_options)
+      ? payload.apo.ranked_options.slice(0, 3).map((option: any) => ({
+          supplierName: String(option.supplier_name ?? ""),
+          route: String(option.via ?? option.route_id ?? ""),
+          landedCostPerBarrel: Number(option.landed_cost_per_barrel ?? 0),
+          transitDays: Number(option.transit_days ?? 0),
+          routeRiskScore: Number(option.route_risk_score ?? 0),
+          compositeScore: Number(option.composite_score ?? 0),
+          volumeOffered: Number(option.volume_offered ?? 0),
+          explanation: String(option.explanation ?? ""),
+        }))
+      : [],
+    llmFlags: Array.isArray(payload.apo?.llm_flags) ? payload.apo.llm_flags.map(String) : [],
   },
   recommendation: String(payload.recommendation ?? ""),
 });
@@ -225,6 +254,7 @@ const LiveMap = () => {
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [agentAnalyses, setAgentAnalyses] = useState<Record<string, AgentZoneAnalysis>>({});
   const [countryFilter, setCountryFilter] = useState("");
+  const analyzedZoneSignaturesRef = useRef<Record<string, string>>({});
 
   const visibleVessels = useMemo(
     () => vessels.filter((vessel) => vesselMatchesCountry(vessel, countryFilter)),
@@ -244,10 +274,12 @@ const LiveMap = () => {
 
   const analyzeZoneWithAgents = useCallback(
     async (zone: TensionZone) => {
+      const signature = zoneAnalysisSignature(zone);
+      analyzedZoneSignaturesRef.current[zone.id] = signature;
       const zoneVessels = visibleVessels.filter((vessel) => pointInPolygon([vessel.lon, vessel.lat], zone.polygon));
       setAgentAnalyses((current) => ({
         ...current,
-        [zone.id]: { status: "loading", message: "GRIA, DSM, and SROA are analyzing this zone." },
+        [zone.id]: { status: "loading", message: "GRIA, DSM, SROA, and APO are analyzing this zone." },
       }));
 
       try {
@@ -288,6 +320,28 @@ const LiveMap = () => {
     },
     [visibleVessels]
   );
+
+  useEffect(() => {
+    if (zones.length === 0) {
+      analyzedZoneSignaturesRef.current = {};
+      return;
+    }
+
+    const pendingZones = zones.filter((zone) => {
+      if (agentAnalyses[zone.id]?.status === "loading") return false;
+      return analyzedZoneSignaturesRef.current[zone.id] !== zoneAnalysisSignature(zone);
+    });
+
+    if (pendingZones.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      pendingZones.forEach((zone) => {
+        void analyzeZoneWithAgents(zone);
+      });
+    }, 700);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [agentAnalyses, analyzeZoneWithAgents, zones]);
 
   const handlePreset = useCallback(
     (preset: PresetKey) => {
