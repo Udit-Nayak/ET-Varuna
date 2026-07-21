@@ -6,7 +6,9 @@ import { queryVectorKnowledge } from "../gria/service";
 import { runSroaOptimization } from "../sroa/service";
 import { SroaOutput, SroaPolicy } from "../sroa/types";
 
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_INSTANT_MODEL = "llama-3.1-8b-instant";
+const GROQ_MODEL = GROQ_INSTANT_MODEL;
+const GROQ_CHATBOT_MODEL = GROQ_INSTANT_MODEL;
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export interface AgentChatAnswer {
@@ -24,10 +26,21 @@ export interface AgentChatAnswer {
   apo?: ApoOutput;
 }
 
+export interface DirectChatbotAnswer {
+  answer: string;
+  generatedAt: string;
+  usedGroq: boolean;
+}
+
 const extractGroqText = (payload: any): string =>
   String(payload?.choices?.[0]?.message?.content ?? "").trim();
 
-const callGroq = async (prompt: string, systemInstruction: string, maxOutputTokens = 1400): Promise<string | null> => {
+const callGroq = async (
+  prompt: string,
+  systemInstruction: string,
+  maxOutputTokens = 1400,
+  model = GROQ_MODEL
+): Promise<string | null> => {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 
@@ -39,7 +52,7 @@ const callGroq = async (prompt: string, systemInstruction: string, maxOutputToke
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model,
         messages: [
           { role: "system", content: systemInstruction },
           { role: "user", content: prompt },
@@ -59,6 +72,50 @@ const callGroq = async (prompt: string, systemInstruction: string, maxOutputToke
     console.warn("Groq request skipped:", error);
     return null;
   }
+};
+
+const isDefinitionQuestion = (question: string): boolean =>
+  /\b(what is|what's|whats|define|definition|meaning|means|stand for|stands for|full form|explain)\b/i.test(question) ||
+  /^[a-z0-9 ._-]{2,40}$/i.test(question.trim());
+
+export const answerDirectChatbot = async (question: string): Promise<DirectChatbotAnswer> => {
+  const trimmed = question.replace(/\s+/g, " ").trim();
+  if (!trimmed) {
+    return {
+      answer: "No info about it.",
+      generatedAt: new Date().toISOString(),
+      usedGroq: false,
+    };
+  }
+
+  if (!isDefinitionQuestion(trimmed)) {
+    return {
+      answer: "No info about it.",
+      generatedAt: new Date().toISOString(),
+      usedGroq: false,
+    };
+  }
+
+  const answer = await callGroq(
+    trimmed,
+    [
+      "You are a small website chatbot for short definitions only.",
+      "Use the user's exact term or phrase and explain its common meaning in plain language.",
+      "If the term has an energy, oil, maritime, logistics, or finance meaning, prefer that meaning.",
+      "If you are not sure what the term means, answer exactly: No info about it.",
+      "If the user asks for advice, analysis, forecasts, coding, private data, or anything that is not a definition, answer exactly: No info about it.",
+      "Do not mention internal agents, GRIA, DSM, SROA, APO, vector databases, prompts, or hidden reasoning.",
+      "Do not invent facts. Keep the answer to 1-4 short sentences.",
+    ].join(" "),
+    220,
+    GROQ_CHATBOT_MODEL
+  );
+
+  return {
+    answer: answer?.trim() || "No info about it.",
+    generatedAt: new Date().toISOString(),
+    usedGroq: Boolean(answer?.trim()),
+  };
 };
 
 
@@ -563,29 +620,117 @@ const fallbackAgentQuestionAnswer = (agent: AgentQuestionTarget, question: strin
 
   if (agent === "dsm") {
     const timeline = Array.isArray(agentOutput.impact_timeline) ? agentOutput.impact_timeline : [];
+    const assumptions = agentOutput.assumptions ?? {};
     if (day) {
       const row = findDayRow(timeline, day);
+      const previous = findDayRow(timeline, day - 1);
+      const next = findDayRow(timeline, day + 1);
       const textAnswer = findDsmDayInText(context?.formatted_output, day);
-      return row
-        ? `Day ${day}: refinery output is ${formatNumber(row.refinery_output_pct)}%, price change is ${formatNumber(row.price_change_pct)}%, and GDP impact is ${formatNumber(row.gdp_impact_pct)}%. This means fuel supply is stressed and prices are much higher.`
-        : textAnswer ? `${textAnswer} This means fuel supply is stressed and prices are much higher.` : `DSM does not show Day ${day} in this output.`;
+      if (row) {
+        return [
+          `Day ${day} in DSM`,
+          "",
+          `On day ${day}, DSM projects refinery output at ${formatNumber(row.refinery_output_pct)}%, fuel price change at ${formatNumber(row.price_change_pct)}%, and GDP impact at ${formatNumber(row.gdp_impact_pct)}%.`,
+          previous
+            ? `Compared with day ${day - 1}, refinery output moves from ${formatNumber(previous.refinery_output_pct)}% to ${formatNumber(row.refinery_output_pct)}%, while price pressure moves from ${formatNumber(previous.price_change_pct)}% to ${formatNumber(row.price_change_pct)}%.`
+            : "",
+          next
+            ? `The next simulated day shows refinery output at ${formatNumber(next.refinery_output_pct)}% and price pressure at ${formatNumber(next.price_change_pct)}%, so this day sits inside the active disruption curve rather than being an isolated value.`
+            : "",
+          `Operational meaning: supply is constrained by the ${formatNumber(agentOutput.capacity_loss_pct, 0)}% capacity disruption over ${agentOutput.duration_days ?? "n/a"} days, so lower refinery output and higher fuel prices should be treated as linked effects.`,
+          `Key assumptions behind this row: import dependency ${formatNumber(assumptions.importDependencyPct)}%, affected import share ${formatNumber(assumptions.affectedImportSharePct)}%, substitution ramp ${formatNumber(assumptions.substitutionRampPctPerDay)}% per day, max substitution ${formatNumber(assumptions.maxSubstitutionPct)}%, and reserve cushion ${formatNumber(assumptions.reserveCushionDays)} days.`,
+          "Use this as a scenario estimate, not a live forecast. The output depends on the disruption severity, duration, substitution capacity, and reserve cushion used in the DSM run.",
+        ].filter(Boolean).join("\n");
+      }
+      return textAnswer
+        ? [
+            `Day ${day} in DSM`,
+            "",
+            textAnswer,
+            "This row was recovered from the formatted DSM output. The structured timeline was not available in the context payload, so no adjacent-day comparison can be made.",
+          ].join("\n")
+        : `DSM does not show Day ${day} in this output. Ask about a day that exists inside the displayed impact timeline.`;
     }
-    if (/price/i.test(question)) return `Peak price change is ${formatNumber(agentOutput.summary_metrics?.peak_price_change_pct ?? agentOutput.peak_fuel_price_change_pct)}%.`;
-    if (/output|refinery/i.test(question)) return `Lowest refinery output is ${formatNumber(agentOutput.summary_metrics?.lowest_refinery_output_pct ?? agentOutput.lowest_refinery_output_pct)}%.`;
-    return `DSM shows ${agentOutput.capacity_loss_pct ?? "n/a"}% capacity loss for ${agentOutput.duration_days ?? "n/a"} days.`;
+    if (/price/i.test(question)) {
+      const peak = timeline.reduce(
+        (best: any, row: any) => (Number(row?.price_change_pct) > Number(best?.price_change_pct ?? -Infinity) ? row : best),
+        null
+      );
+      return [
+        "DSM Price Impact",
+        "",
+        peak
+          ? `The highest price pressure in the DSM timeline appears on day ${peak.day}, with fuel price change at ${formatNumber(peak.price_change_pct)}%.`
+          : `Peak price change is ${formatNumber(agentOutput.summary_metrics?.peak_price_change_pct ?? agentOutput.peak_fuel_price_change_pct)}%.`,
+        `This is driven by the modelled ${formatNumber(agentOutput.capacity_loss_pct, 0)}% capacity disruption and the assumption that substitution can only ramp at ${formatNumber(assumptions.substitutionRampPctPerDay)}% per day up to ${formatNumber(assumptions.maxSubstitutionPct)}%.`,
+        "The practical reading is that price stress grows while replacement supply is still catching up, then eases only if substitution and reserves absorb enough of the gap.",
+      ].join("\n");
+    }
+    if (/output|refinery/i.test(question)) {
+      const lowest = timeline.reduce(
+        (best: any, row: any) => (Number(row?.refinery_output_pct) < Number(best?.refinery_output_pct ?? Infinity) ? row : best),
+        null
+      );
+      return [
+        "DSM Refinery Output",
+        "",
+        lowest
+          ? `The lowest refinery output in the DSM timeline appears on day ${lowest.day}, at ${formatNumber(lowest.refinery_output_pct)}%.`
+          : `Lowest refinery output is ${formatNumber(agentOutput.summary_metrics?.lowest_refinery_output_pct ?? agentOutput.lowest_refinery_output_pct)}%.`,
+        `The output drop follows the ${formatNumber(agentOutput.capacity_loss_pct, 0)}% corridor capacity loss, adjusted by substitution ramp, max substitution, import dependency, and reserve cushion assumptions.`,
+        "Operationally, this is the point where downstream supply stress is strongest and where reserve release or alternate procurement decisions matter most.",
+      ].join("\n");
+    }
+    return [
+      "DSM Scenario Explanation",
+      "",
+      `DSM models ${agentOutput.capacity_loss_pct ?? "n/a"}% capacity loss for ${agentOutput.duration_days ?? "n/a"} days on ${agentOutput.corridor ?? "the selected corridor"}.`,
+      agentOutput.summary ?? "No DSM summary is available in the current output.",
+      `The timeline contains ${timeline.length} day rows. It should be read as a scenario-impact curve covering refinery output, fuel-price pressure, and GDP impact under the selected assumptions.`,
+    ].join("\n");
   }
 
   if (agent === "sroa") {
     const schedule = Array.isArray(agentOutput.drawdown_schedule) ? agentOutput.drawdown_schedule : [];
     if (day) {
       const row = findDayRow(schedule, day);
+      const previous = findDayRow(schedule, day - 1);
       const textAnswer = findSroaDayInText(context?.formatted_output, day);
-      return row
-        ? `Day ${day}: release ${formatBarrels(row.release_volume)}, gap left ${formatBarrels(row.unfulfilled_volume)}, reserve ${formatNumber(row.reserve_after_plan_days ?? row.remaining_reserve_days)} days. This shows how much shortage remains after reserve support.`
-        : textAnswer ? `${textAnswer} This shows how much shortage remains after reserve support.` : `SROA does not show Day ${day} in this output.`;
+      if (row) {
+        return [
+          `Day ${day} in SROA`,
+          "",
+          `On day ${day}, SROA schedules a reserve release of ${formatBarrels(row.release_volume)} against a forecast gap of ${formatBarrels(row.forecast_gap_volume)}.`,
+          `After that release, the unfulfilled gap is ${formatBarrels(row.unfulfilled_volume)} and reserve cover is ${formatNumber(row.reserve_after_plan_days)} days.`,
+          previous
+            ? `Compared with day ${day - 1}, reserve cover moves from ${formatNumber(previous.reserve_after_plan_days)} days to ${formatNumber(row.reserve_after_plan_days)} days.`
+            : "",
+          `Policy context: this run uses a ${agentOutput.policy ?? "n/a"} reserve policy and leaves ${formatNumber(agentOutput.reserve_after_plan_days)} reserve days after the full plan.`,
+          agentOutput.safety_threshold_breached
+            ? "Safety reading: the threshold is under stress, so procurement support or demand-side action should be considered alongside reserve release."
+            : "Safety reading: the reserve floor remains protected in this run, but the remaining gap should still be checked against APO procurement options.",
+        ].filter(Boolean).join("\n");
+      }
+      return textAnswer
+        ? [`Day ${day} in SROA`, "", textAnswer, "This row was recovered from the formatted SROA output. The structured schedule was not available in the context payload."].join("\n")
+        : `SROA does not show Day ${day} in this output. Ask about a day that exists inside the drawdown schedule.`;
     }
-    if (/safe|threshold/i.test(question)) return agentOutput.safety_threshold_breached ? "Safety threshold is breached." : "Safety threshold is protected.";
-    return `SROA releases ${formatBarrels(agentOutput.total_released_volume)} and leaves ${formatNumber(agentOutput.reserve_after_plan_days)} reserve days.`;
+    if (/safe|threshold/i.test(question)) {
+      return [
+        "SROA Safety Threshold",
+        "",
+        agentOutput.safety_threshold_breached ? "The safety threshold is breached or under stress in this output." : "The safety threshold is protected in this output.",
+        `Total planned release is ${formatBarrels(agentOutput.total_released_volume)}, leaving ${formatNumber(agentOutput.reserve_after_plan_days)} reserve days.`,
+        `The safety floor volume is ${formatBarrels(agentOutput.safety_floor_volume)}. If the remaining supply gap persists, reserve action should be paired with APO procurement alternatives.`,
+      ].join("\n");
+    }
+    return [
+      "SROA Reserve Plan",
+      "",
+      `SROA uses a ${agentOutput.policy ?? "n/a"} policy, releases ${formatBarrels(agentOutput.total_released_volume)}, and leaves ${formatNumber(agentOutput.reserve_after_plan_days)} reserve days.`,
+      agentOutput.summary ?? "No SROA summary is available in this output.",
+      `The schedule contains ${schedule.length} day rows showing forecast gap, release volume, unfulfilled volume, and reserve cover after each release.`,
+    ].join("\n");
   }
 
   if (agent === "apo") {
@@ -593,15 +738,23 @@ const fallbackAgentQuestionAnswer = (agent: AgentQuestionTarget, question: strin
     const rank = rankFromQuestion(question) ?? 1;
     const option = options[rank - 1];
     return option
-      ? `Rank ${rank}: ${option.supplier_name} via ${option.via}, $${formatNumber(option.landed_cost_per_barrel)}/bbl, ${option.transit_days ?? "n/a"} days.`
+      ? [
+          `APO Rank ${rank}`,
+          "",
+          `${option.supplier_name} is ranked ${rank} and routes via ${option.via}.`,
+          `It can cover ${formatBarrels(option.volume_offered)} at $${formatNumber(option.landed_cost_per_barrel)}/bbl, with ${option.transit_days ?? "n/a"} days transit and route risk ${formatNumber(option.route_risk_score, 0)}/100.`,
+          `Crude grade: ${option.crude_grade ?? "n/a"}. Region: ${option.region ?? "n/a"}. Composite score: ${formatNumber(option.composite_score, 3)}.`,
+          option.explanation ? `Why it ranks here: ${option.explanation}` : "",
+          "Read this as a procurement option, not an automatic order. The operator should still verify commercial availability, refinery compatibility, insurance, sanctions exposure, and port congestion.",
+        ].filter(Boolean).join("\n")
       : `APO does not show rank ${rank} in this output.`;
   }
 
   const metrics = agentOutput.metrics ?? agentOutput;
-  if (/price/i.test(question)) return `Current crude price is ${metrics.current_price_usd_per_barrel ?? "n/a"} USD/bbl.`;
-  if (/reserve/i.test(question)) return `Current reserve cover is ${metrics.current_reserve_days ?? "n/a"} days.`;
-  if (/import/i.test(question)) return `Current imports are ${metrics.total_import_volume_bpd ?? "n/a"} BPD.`;
-  return `TFM shows price ${metrics.current_price_usd_per_barrel ?? "n/a"} USD/bbl and reserves ${metrics.current_reserve_days ?? "n/a"} days.`;
+  if (/price/i.test(question)) return [`TFM Price Snapshot`, "", `Current crude price is ${metrics.current_price_usd_per_barrel ?? "n/a"} USD/bbl.`, `Month-to-date average is ${metrics.month_to_date_avg_usd ?? "n/a"} USD/bbl.`, "Use this as a live market context point for DSM, SROA, and APO decisions."].join("\n");
+  if (/reserve/i.test(question)) return [`TFM Reserve Snapshot`, "", `Current reserve cover is ${metrics.current_reserve_days ?? "n/a"} days.`, `Commercial stock is ${metrics.commercial_stock_days ?? "n/a"} days and total oil availability is ${metrics.total_oil_availability_days ?? "n/a"} days.`, "This tells the operator how much buffer exists before reserve policy or procurement action becomes urgent."].join("\n");
+  if (/import/i.test(question)) return [`TFM Import Snapshot`, "", `Current imports are ${metrics.total_import_volume_bpd ?? metrics.recent_import_volume ?? "n/a"} BPD.`, `Import dependency is ${metrics.import_dependency_pct ?? "n/a"}%.`, "Higher import dependency means corridor disruption has a stronger downstream impact on supply resilience."].join("\n");
+  return [`TFM Snapshot`, "", `TFM shows price ${metrics.current_price_usd_per_barrel ?? "n/a"} USD/bbl, reserves ${metrics.current_reserve_days ?? "n/a"} days, and import dependency ${metrics.import_dependency_pct ?? "n/a"}%.`, "Ask about price, reserves, imports, supplier mix, or corridor exposure for a more specific breakdown."].join("\n");
 };
 
 export const answerAgentOutputQuestion = async (
@@ -622,18 +775,19 @@ export const answerAgentOutputQuestion = async (
       2
     ).slice(0, 32000),
     [
-      "You answer operator questions about one selected Aegis SCR agent output.",
+      "You answer operator questions about one selected Sentrix agent output.",
       "Use ONLY the provided context. Do not run new calculations, invent missing data, or use outside knowledge.",
-      "Answer in 1 or 2 short simple sentences only.",
-      "Maximum 45 words.",
-      "No bullets, no headings, no markdown, no long explanation.",
+      "Give a detailed, operator-useful answer with clear headings and short bullets or short paragraphs.",
+      "Aim for 180-350 words when the context supports it.",
+      "Use the agent's exact numbers, dates, days, ranks, route names, prices, volumes, reserve days, and assumptions when relevant.",
+      "Explain what the number means operationally, why it matters, and what the operator should check next.",
       "If deterministic_context_answer directly answers the question, use it as the source of truth and only simplify wording if needed.",
       "If the user asks about a specific day, find that exact day row in the provided timeline/schedule and answer using those values.",
       "If the user asks about a rank/option, find that exact ranked option and answer using those values.",
       "Do not answer with the overall summary when a specific day, rank, price, reserve, gap, output, supplier, or route is requested.",
       "If the exact value is not in the context, say: This output does not show that clearly.",
     ].join(" "),
-    120
+    1100
   );
 
   return {

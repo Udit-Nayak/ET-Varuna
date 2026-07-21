@@ -3,6 +3,7 @@ import { verifyFirebaseToken } from "../../middleware/verifyFirebaseToken";
 import {
   askAgentChat,
   askAgentOutputQuestionController,
+  askDirectChatbot,
   createChatSession,
   deleteChatSession,
   formatAgentOutputController,
@@ -15,6 +16,7 @@ const router = Router();
 
 router.use(verifyFirebaseToken);
 
+router.post("/direct", askDirectChatbot);
 router.post("/ask", askAgentChat);
 router.post("/format-agent-output", formatAgentOutputController);
 router.get("/sessions", listChatSessions);

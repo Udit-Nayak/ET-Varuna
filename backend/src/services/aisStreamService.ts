@@ -59,9 +59,15 @@ const isTradingVesselType = (type?: number) => type !== undefined && type >= 70 
 const STALE_MS = 15 * 60 * 1000;
 const BROADCAST_INTERVAL_MS = 4000;
 const MAX_BROADCAST_VESSELS = 5000;
+const AIS_CONNECT_TIMEOUT_MS = Number(process.env.AISSTREAM_CONNECT_TIMEOUT_MS ?? 15000);
+const AIS_RECONNECT_MIN_MS = Number(process.env.AISSTREAM_RECONNECT_MIN_MS ?? 5000);
+const AIS_RECONNECT_MAX_MS = Number(process.env.AISSTREAM_RECONNECT_MAX_MS ?? 120000);
+const AIS_FAILURE_COOLDOWN_MS = Number(process.env.AISSTREAM_FAILURE_COOLDOWN_MS ?? 300000);
+const AIS_FAILURES_BEFORE_COOLDOWN = Number(process.env.AISSTREAM_FAILURES_BEFORE_COOLDOWN ?? 5);
 const SIMULATION_ENABLED =
   process.env.AIS_SIMULATION_ENABLED === "true" ||
   (!process.env.AISSTREAM_API_KEY && process.env.AIS_SIMULATION_ENABLED !== "false");
+const AISSTREAM_ENABLED = process.env.AISSTREAM_ENABLED !== "false";
 
 const SIMULATED_ROUTES: [number, number][][] = [
   // Route 1: Persian Gulf to Mumbai, kept in navigable water lanes.
@@ -212,8 +218,12 @@ class AisStreamService {
   private staticDataByMmsi = new Map<number, StaticVesselData>();
   private listeners: Listener[] = [];
   private ws: WebSocket | null = null;
-  private reconnectDelay = 2000;
+  private reconnectDelay = AIS_RECONNECT_MIN_MS;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private consecutiveConnectionFailures = 0;
+  private lastConnectionError = "";
   private lastCapWarningAt = 0;
+  private lastDiagnosticWarningAt = 0;
   private simulatedFleet: SimulatedVessel[] = [];
 
   // diagnostics
@@ -226,7 +236,9 @@ class AisStreamService {
     }
 
     const apiKey = process.env.AISSTREAM_API_KEY;
-    if (!apiKey) {
+    if (!AISSTREAM_ENABLED) {
+      console.warn("AISStream disabled by AISSTREAM_ENABLED=false. Operating with simulator data only.");
+    } else if (!apiKey) {
       console.warn("AISSTREAM_API_KEY not set — operating in simulation mode only.");
     } else {
       this.connect(apiKey);
@@ -332,23 +344,61 @@ class AisStreamService {
     });
   }
 
-  private connect(apiKey: string) {
-    this.ws = new WebSocket(AIS_URL);
+  private buildSubscriptionMessage(apiKey: string) {
+    return {
+      APIKey: apiKey,
+      BoundingBoxes: BOUNDING_BOXES,
+      FilterMessageTypes: [...POSITION_MESSAGE_TYPES, ...STATIC_MESSAGE_TYPES],
+    };
+  }
 
-    this.ws.on("open", () => {
+  private scheduleReconnect(apiKey: string, reason: string) {
+    if (!AISSTREAM_ENABLED || this.reconnectTimer) return;
+
+    const cooldown = this.consecutiveConnectionFailures >= AIS_FAILURES_BEFORE_COOLDOWN;
+    const delay = cooldown ? AIS_FAILURE_COOLDOWN_MS : this.reconnectDelay;
+    const fallback = SIMULATION_ENABLED ? " Simulator fallback remains active." : "";
+    console.warn(`AISStream unavailable (${reason}).${fallback} Retrying in ${delay}ms.`);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect(apiKey);
+    }, delay);
+
+    this.reconnectDelay = cooldown ? AIS_RECONNECT_MAX_MS : Math.min(this.reconnectDelay * 2, AIS_RECONNECT_MAX_MS);
+  }
+
+  private logConnectionDiagnostic(error: Error & { code?: string }) {
+    const now = Date.now();
+    if (now - this.lastDiagnosticWarningAt < 60000) return;
+    this.lastDiagnosticWarningAt = now;
+
+    const code = error.code ? `${error.code}: ` : "";
+    console.warn(
+      `${code}${error.message}. AISStream is a remote beta websocket service; if this repeats, check outbound wss/443 access, VPN/firewall/proxy rules, DNS, and whether https://stream.aisstream.io is reachable from this machine or deployment host.`
+    );
+  }
+
+  private connect(apiKey: string) {
+    if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+      this.ws.terminate();
+    }
+
+    const socket = new WebSocket(AIS_URL, {
+      handshakeTimeout: AIS_CONNECT_TIMEOUT_MS,
+      perMessageDeflate: false,
+    });
+    this.ws = socket;
+
+    socket.on("open", () => {
       console.log("AISStream connected");
-      this.reconnectDelay = 2000;
-      this.ws?.send(
-        JSON.stringify({
-          APIKey: apiKey,
-          Apikey: apiKey,
-          BoundingBoxes: BOUNDING_BOXES,
-          FilterMessageTypes: [...POSITION_MESSAGE_TYPES, ...STATIC_MESSAGE_TYPES],
-        })
-      );
+      this.reconnectDelay = AIS_RECONNECT_MIN_MS;
+      this.consecutiveConnectionFailures = 0;
+      this.lastConnectionError = "";
+      socket.send(JSON.stringify(this.buildSubscriptionMessage(apiKey)));
     });
 
-    this.ws.on("message", (data) => {
+    socket.on("message", (data) => {
       try {
         const parsed = JSON.parse(data.toString());
         if (parsed.error) {
@@ -361,16 +411,18 @@ class AisStreamService {
       }
     });
 
-    this.ws.on("close", (code, reason) => {
-      console.warn(
-        `AISStream disconnected (code ${code}, reason: ${reason || "none"}) — retrying in ${this.reconnectDelay}ms`
-      );
-      setTimeout(() => this.connect(apiKey), this.reconnectDelay);
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+    socket.on("close", (code, reason) => {
+      if (this.ws === socket) {
+        this.ws = null;
+      }
+      this.consecutiveConnectionFailures += 1;
+      this.scheduleReconnect(apiKey, reason?.toString() || this.lastConnectionError || `close code ${code}`);
     });
 
-    this.ws.on("error", (err) => {
-      console.error("AISStream error:", err.message);
+    socket.on("error", (err) => {
+      const error = err as Error & { code?: string };
+      this.lastConnectionError = error.code ? `${error.code} ${error.message}` : error.message;
+      this.logConnectionDiagnostic(error);
     });
   }
 

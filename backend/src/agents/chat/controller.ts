@@ -1,7 +1,14 @@
 import { Request, Response } from "express";
 import ChatSession from "../../models/ChatSession";
 import { AuthedRequest } from "../../middleware/verifyFirebaseToken";
-import { answerAgentChat, answerAgentOutputQuestion, formatAgentOutput, AgentOutputFormatTarget, AgentQuestionTarget } from "./service";
+import {
+  answerAgentChat,
+  answerAgentOutputQuestion,
+  answerDirectChatbot,
+  formatAgentOutput,
+  AgentOutputFormatTarget,
+  AgentQuestionTarget,
+} from "./service";
 
 export const askAgentChat = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -17,6 +24,25 @@ export const askAgentChat = async (req: Request, res: Response): Promise<void> =
     console.error("Failed to answer agent chat", error);
     res.status(500).json({
       error: "Failed to answer agent chat",
+      detail: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+export const askDirectChatbot = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const question = String(req.body?.question ?? req.body?.query ?? "").trim();
+    if (!question) {
+      res.status(400).json({ error: "question is required" });
+      return;
+    }
+
+    const result = await answerDirectChatbot(question);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Failed to answer direct chatbot", error);
+    res.status(500).json({
+      error: "Failed to answer direct chatbot",
       detail: error instanceof Error ? error.message : "Unknown error",
     });
   }
