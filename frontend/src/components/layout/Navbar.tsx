@@ -183,11 +183,24 @@ const Navbar = ({ workspaceMode = true }: NavbarProps) => {
           <button
             type="button"
             onClick={() => setChatOpen((value) => !value)}
+<<<<<<< Updated upstream
             className="flex h-9 w-9 items-center justify-center rounded-full border border-amber/50 bg-surface text-[11px] font-semibold text-amber shadow-sm shadow-base/30 transition-colors hover:bg-amber hover:text-base"
+=======
+            className="flex h-9 w-9 items-center justify-center text-amber transition-colors hover:text-amber/80"
+>>>>>>> Stashed changes
             aria-label="AI bot"
             title="AI bot"
           >
-            AI
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="drop-shadow-sm">
+              <path d="M8.2 5.3 6.6 2.9M15.8 5.3l1.6-2.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              <circle cx="6.2" cy="2.7" r="1.4" fill="currentColor" />
+              <circle cx="17.8" cy="2.7" r="1.4" fill="currentColor" />
+              <path d="M4.4 10.2h-.9a1.7 1.7 0 0 0 0 3.4h.9M19.6 10.2h.9a1.7 1.7 0 0 1 0 3.4h-.9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              <rect x="4.7" y="6.2" width="14.6" height="12.4" rx="3.2" fill="currentColor" />
+              <circle cx="9.2" cy="11" r="1.6" fill="#F6F7F9" />
+              <circle cx="14.8" cy="11" r="1.6" fill="#F6F7F9" />
+              <path d="M8.6 15.2h6.8" stroke="#F6F7F9" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
           </button>
 
           <div className="relative">

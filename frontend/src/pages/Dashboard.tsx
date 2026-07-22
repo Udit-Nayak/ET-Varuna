@@ -76,6 +76,7 @@ const Dashboard = () => {
   const split = useSplitRatio(workspaceRef);
   const [mapPaneWidth, setMapPaneWidth] = useState(0);
   const [chatPaneWidth, setChatPaneWidth] = useState(0);
+  const [isEraseMode, setIsEraseMode] = useState(false);
 
   const isWorkspace = phase === "workspace";
   const mapCompact = isWorkspace && (split.ratio < 30 || mapPaneWidth < 420);
@@ -139,12 +140,43 @@ const Dashboard = () => {
     [chat, vessels]
   );
 
+  const resetWorkspaceChat = useCallback(() => {
+    clearAllZones();
+    setIsDrawing(false);
+    setIsEraseMode(false);
+    chat.startNewChat();
+  }, [chat, clearAllZones, setIsDrawing]);
+
+  const handleLoadSession = useCallback(
+    (sessionId: string) => {
+      clearAllZones();
+      setIsDrawing(false);
+      setIsEraseMode(false);
+      void chat.loadSession(sessionId);
+    },
+    [chat, clearAllZones, setIsDrawing]
+  );
+
+  const handleRemoveZone = useCallback(
+    (id: string) => {
+      const remainingZones = zones.filter((zone) => zone.id !== id);
+      removeZone(id);
+      setIsEraseMode((current) => (remainingZones.length === 0 ? false : current));
+      chat.startNewChat();
+      window.setTimeout(() => {
+        remainingZones.forEach((zone) => analyzeZone(zone));
+      }, 0);
+    },
+    [analyzeZone, chat, removeZone, zones]
+  );
+
   const handlePreset = useCallback(
     (preset: PresetKey) => {
       const config = presetPolygons[preset];
       const corridorId = config.corridorId ?? matchCorridorToZone(config.polygon);
       const zoneId = addZone(config.polygon, corridorId, config.tensionPct, config.durationDays);
       setIsDrawing(false);
+      setIsEraseMode(false);
       analyzeZone({
         id: zoneId,
         name: config.label,
@@ -163,6 +195,7 @@ const Dashboard = () => {
       const corridorId = matchCorridorToZone(polygon);
       const zoneId = addZone(polygon, corridorId, 50, 14);
       setIsDrawing(false);
+      setIsEraseMode(false);
       analyzeZone({
         id: zoneId,
         name: `Drawn zone - ${corridorLabel(corridorId)}`,
@@ -208,6 +241,8 @@ const Dashboard = () => {
           isDrawing={isWorkspace && isDrawing}
           status={status}
           onZoneDrawn={handleZoneDrawn}
+          isEraseMode={isWorkspace && isEraseMode}
+          onZoneErase={handleRemoveZone}
           backgroundMode={!isWorkspace}
           interactive={isWorkspace}
           compact={mapCompact}
@@ -216,9 +251,17 @@ const Dashboard = () => {
         {isWorkspace && (
           <TensionDrawer
             isDrawing={isDrawing}
-            onToggleDrawing={() => setIsDrawing(!isDrawing)}
+            isEraseMode={isEraseMode}
+            onToggleEraseMode={() => {
+              setIsDrawing(false);
+              setIsEraseMode((current) => !current);
+            }}
+            onToggleDrawing={() => {
+              setIsEraseMode(false);
+              setIsDrawing(!isDrawing);
+            }}
             onPreset={handlePreset}
-            onClearAll={clearAllZones}
+            onClearAll={resetWorkspaceChat}
             hasZones={zones.length > 0}
           />
         )}
@@ -257,15 +300,15 @@ const Dashboard = () => {
             zones={zones}
             impact={impact}
             onAskQuestion={chat.askQuestion}
-            onClearChat={chat.clearMessages}
+            onClearChat={resetWorkspaceChat}
             onToggleHistory={() => chat.setHistoryOpen((value) => !value)}
-            onStartNewChat={chat.startNewChat}
-            onLoadSession={chat.loadSession}
+            onStartNewChat={resetWorkspaceChat}
+            onLoadSession={handleLoadSession}
             onDeleteSession={chat.deleteSession}
             onAnalyzeZone={analyzeZone}
             onSetTension={setZoneTension}
             onSetDuration={setZoneDuration}
-            onRemoveZone={removeZone}
+            onRemoveZone={handleRemoveZone}
           />
         </motion.main>
       )}

@@ -362,6 +362,8 @@ interface VesselMapProps {
   isDrawing: boolean;
   status: StreamStatus;
   onZoneDrawn: (coordinates: number[][]) => void;
+  isEraseMode?: boolean;
+  onZoneErase?: (zoneId: string) => void;
   backgroundMode?: boolean;
   interactive?: boolean;
   compact?: boolean;
@@ -389,6 +391,8 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       isDrawing,
       status,
       onZoneDrawn,
+      isEraseMode = false,
+      onZoneErase,
       backgroundMode = false,
       interactive = !backgroundMode,
       compact = false,
@@ -399,7 +403,7 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const navControlRef = useRef<maplibregl.NavigationControl | null>(null);
-  const interactionRef = useRef({ interactive, backgroundMode, onZoneDrawn });
+  const interactionRef = useRef({ interactive, backgroundMode, onZoneDrawn, isEraseMode, onZoneErase });
   const loadedRef = useRef(false);
   const draftPointsRef = useRef<[number, number][]>([]);
   const [selectedVessel, setSelectedVessel] = useState<SelectedVesselDetails | null>(null);
@@ -420,9 +424,9 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
   }));
 
   useEffect(() => {
-    interactionRef.current = { interactive, backgroundMode, onZoneDrawn };
+    interactionRef.current = { interactive, backgroundMode, onZoneDrawn, isEraseMode, onZoneErase };
     if (!interactive) draftPointsRef.current = [];
-  }, [backgroundMode, interactive, onZoneDrawn]);
+  }, [backgroundMode, interactive, isEraseMode, onZoneDrawn, onZoneErase]);
 
   useEffect(() => {
     if (compact) {
@@ -641,84 +645,119 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       });
 
       const makeShipIcon = (color: string, kind: "tanker" | "vessel" = "vessel") => {
-        const size = 46;
+        const size = kind === "tanker" ? 72 : 48;
         const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext("2d")!;
 
         ctx.translate(size / 2, size / 2);
-        ctx.shadowColor = "#05080C";
-        ctx.shadowBlur = 5;
-        ctx.shadowOffsetY = 1;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
+        ctx.shadowColor = "rgba(5, 8, 12, 0.9)";
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+
+        const drawHullPath = (width: number, bowY: number, sternY: number, sternInset: number) => {
+          ctx.beginPath();
+          ctx.moveTo(0, bowY);
+          ctx.bezierCurveTo(width * 0.56, bowY + 4, width * 0.62, -5, width * 0.5, sternY - 5);
+          ctx.lineTo(sternInset, sternY);
+          ctx.lineTo(-sternInset, sternY);
+          ctx.lineTo(-width * 0.5, sternY - 5);
+          ctx.bezierCurveTo(-width * 0.62, -5, -width * 0.56, bowY + 4, 0, bowY);
+          ctx.closePath();
+        };
 
         if (kind === "tanker") {
-          ctx.rotate(Math.PI / 2);
-          ctx.fillStyle = color;
-          ctx.strokeStyle = "#071018";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(0, -19);
-          ctx.lineTo(10, -15);
-          ctx.lineTo(12, 12);
-          ctx.lineTo(5, 19);
-          ctx.lineTo(-5, 19);
-          ctx.lineTo(-12, 12);
-          ctx.lineTo(-10, -15);
-          ctx.closePath();
+          const alertTint = color === VESSEL_AFFECTED_COLOR || color === VESSEL_APPROACHING_COLOR;
+          const outerHull = alertTint ? color : "#9D3431";
+          drawHullPath(24, -31, 31, 7);
+          ctx.fillStyle = outerHull;
+          ctx.strokeStyle = "#F1E8D6";
+          ctx.lineWidth = 2.2;
           ctx.fill();
           ctx.stroke();
 
           ctx.shadowBlur = 0;
-          const containerColors = ["#E8A33D", "#3FA796", "#5EC9FF", "#D64545", "#C084FC"];
-          for (let row = 0; row < 3; row += 1) {
-            for (let col = 0; col < 5; col += 1) {
-              ctx.fillStyle = containerColors[(row + col) % containerColors.length];
-              ctx.globalAlpha = 0.82;
-              ctx.fillRect(-7 + row * 5, -10 + col * 4.6, 3.7, 3.4);
-              ctx.globalAlpha = 1;
+          drawHullPath(18.5, -26, 26, 5.5);
+          ctx.fillStyle = "#2A2927";
+          ctx.globalAlpha = 0.92;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+
+          ctx.fillStyle = "#D9B35B";
+          ctx.strokeStyle = "rgba(7, 16, 24, 0.65)";
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.roundRect(-7.5, -27, 15, 8, 1.5);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "rgba(246, 247, 249, 0.9)";
+          ctx.fillRect(-1.2, -33, 2.4, 9);
+
+          const containerColors = ["#C49A3A", "#3FA796", "#2D7D9A", "#B84C4C", "#6A7077"];
+          for (let row = 0; row < 4; row += 1) {
+            for (let col = 0; col < 10; col += 1) {
+              const x = -8.4 + row * 5.6;
+              const y = -16 + col * 4.2;
+              ctx.fillStyle = containerColors[(row * 2 + col) % containerColors.length];
+              ctx.fillRect(x, y, 4.5, 3.1);
+              ctx.strokeRect(x, y, 4.5, 3.1);
             }
           }
-          ctx.fillStyle = "rgba(246, 247, 249, 0.9)";
-          ctx.fillRect(-5, -16.5, 10, 3.5);
-        } else {
-          ctx.rotate(Math.PI / 2);
-          const hull = color === VESSEL_OTHER_COLOR || color === VESSEL_STALE_COLOR ? "#F6F7F9" : color;
-          ctx.fillStyle = hull;
-          ctx.strokeStyle = "#071018";
-          ctx.lineWidth = 2;
+
+          ctx.strokeStyle = "rgba(246, 247, 249, 0.55)";
+          ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(0, -17);
-          ctx.bezierCurveTo(9, -11, 12, 2, 8, 15);
-          ctx.lineTo(0, 19);
-          ctx.lineTo(-8, 15);
-          ctx.bezierCurveTo(-12, 2, -9, -11, 0, -17);
-          ctx.closePath();
+          ctx.moveTo(-10.8, -23);
+          ctx.lineTo(-10.8, 23);
+          ctx.moveTo(10.8, -23);
+          ctx.lineTo(10.8, 23);
+          ctx.stroke();
+        } else {
+          const accent = color === VESSEL_OTHER_COLOR || color === VESSEL_STALE_COLOR ? "#D8D2C4" : color;
+          drawHullPath(22, -21, 21, 6);
+          ctx.fillStyle = "#F4EFE5";
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 2.4;
           ctx.fill();
           ctx.stroke();
 
           ctx.shadowBlur = 0;
-          ctx.fillStyle = "rgba(183, 160, 116, 0.9)";
-          ctx.strokeStyle = "rgba(7, 16, 24, 0.35)";
-          ctx.lineWidth = 1;
+          drawHullPath(15.5, -15.5, 15.5, 4.5);
+          ctx.fillStyle = "#FFFDF7";
+          ctx.fill();
+
+          ctx.fillStyle = "#D8C59E";
+          ctx.strokeStyle = "rgba(7, 16, 24, 0.28)";
+          ctx.lineWidth = 0.9;
           ctx.beginPath();
-          ctx.roundRect(-4.5, -5, 9, 9, 3);
+          ctx.roundRect(-5, -1, 10, 10.5, 3.5);
           ctx.fill();
           ctx.stroke();
-          ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+
+          ctx.fillStyle = "#26323A";
           ctx.beginPath();
-          ctx.ellipse(0, 7, 4.5, 2.4, 0, 0, Math.PI * 2);
+          ctx.roundRect(-5.5, -9.2, 11, 5.5, 2.8);
           ctx.fill();
-          ctx.strokeStyle = color;
-          ctx.globalAlpha = 0.7;
-          ctx.lineWidth = 2;
+          ctx.fillStyle = "rgba(94, 201, 255, 0.55)";
+          ctx.fillRect(-4.1, -8.1, 8.2, 1.8);
+
+          ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
           ctx.beginPath();
-          ctx.moveTo(-6, 17);
-          ctx.lineTo(6, 17);
+          ctx.arc(-4, 5, 2.4, 0, Math.PI * 2);
+          ctx.arc(3, 3, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = "rgba(7, 16, 24, 0.45)";
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.moveTo(0, -22);
+          ctx.lineTo(0, -16);
+          ctx.moveTo(-8, 16);
+          ctx.lineTo(8, 16);
           ctx.stroke();
-          ctx.globalAlpha = 1;
         }
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1082,6 +1121,51 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       });
   }, [mapReady, zones]);
 
+  // ---- Erase tension zone interaction ----
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !interactive || backgroundMode || !isEraseMode) return;
+
+    const zoneLayerIds = () =>
+      zones
+        .map((zone) => `tension-zone-${zone.id}`)
+        .filter((layerId) => Boolean(map.getLayer(layerId)));
+
+    const findZoneIdAtPoint = (point: maplibregl.PointLike) => {
+      const layers = zoneLayerIds();
+      if (layers.length === 0) return null;
+      const feature = map.queryRenderedFeatures(point, { layers }).find((candidate) => candidate.properties?.id);
+      return feature?.properties?.id ? String(feature.properties.id) : null;
+    };
+
+    const handleEraseClick = (event: maplibregl.MapMouseEvent) => {
+      const { isEraseMode: eraseActive, onZoneErase: eraseZone } = interactionRef.current;
+      if (!eraseActive || !eraseZone || isDrawing || draftPointsRef.current.length > 0) return;
+      const zoneId = findZoneIdAtPoint(event.point);
+      if (!zoneId) return;
+      event.preventDefault();
+      eraseZone(zoneId);
+    };
+
+    const handleMouseMove = (event: maplibregl.MapMouseEvent) => {
+      const eraseActive = interactionRef.current.isEraseMode && !isDrawing;
+      if (!eraseActive) {
+        map.getCanvas().style.cursor = "";
+        return;
+      }
+      map.getCanvas().style.cursor = findZoneIdAtPoint(event.point) ? "not-allowed" : "crosshair";
+    };
+
+    map.on("click", handleEraseClick);
+    map.on("mousemove", handleMouseMove);
+
+    return () => {
+      map.off("click", handleEraseClick);
+      map.off("mousemove", handleMouseMove);
+      if (interactionRef.current.isEraseMode) map.getCanvas().style.cursor = "";
+    };
+  }, [backgroundMode, interactive, isDrawing, isEraseMode, mapReady, zones]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -1149,6 +1233,12 @@ const VesselMap = forwardRef<VesselMapHandle, VesselMapProps>(
       {interactive && !backgroundMode && isDrawing && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-amber/40 bg-surface/95 px-4 py-1.5 font-mono text-[11px] text-amber shadow-lg backdrop-blur">
           Click to place points · click first point or double-click to finish · Esc to cancel
+        </div>
+      )}
+
+      {interactive && !backgroundMode && isEraseMode && !isDrawing && (
+        <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full border border-safe/40 bg-surface/95 px-4 py-1.5 font-mono text-[11px] text-safe shadow-lg backdrop-blur">
+          Erase mode on · click a disruption zone to remove it
         </div>
       )}
 

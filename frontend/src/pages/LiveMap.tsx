@@ -352,6 +352,7 @@ const LiveMap = () => {
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [agentAnalyses, setAgentAnalyses] = useState<Record<string, AgentZoneAnalysis>>({});
   const [countryFilter, setCountryFilter] = useState("");
+  const [isEraseMode, setIsEraseMode] = useState(false);
   const analyzedZoneSignaturesRef = useRef<Record<string, string>>({});
 
   const visibleVessels = useMemo(
@@ -460,12 +461,23 @@ const LiveMap = () => {
     return () => window.clearTimeout(timeoutId);
   }, [agentAnalyses, analyzeZoneWithAgents, zones]);
 
+  const handleRemoveZone = useCallback(
+    (id: string) => {
+      removeZone(id);
+      analyzedZoneSignaturesRef.current = {};
+      setAgentAnalyses({});
+      setIsEraseMode((current) => (zones.length <= 1 ? false : current));
+    },
+    [removeZone, zones.length]
+  );
+
   const handlePreset = useCallback(
     (preset: PresetKey) => {
       const config = presetPolygons[preset];
       const corridorId = config.corridorId ?? matchCorridorToZone(config.polygon);
       const zoneId = addZone(config.polygon, corridorId, config.tensionPct, config.durationDays);
       setIsDrawing(false);
+      setIsEraseMode(false);
       void analyzeZoneWithAgents({
         id: zoneId,
         name: config.label,
@@ -484,6 +496,7 @@ const LiveMap = () => {
       const corridorId = matchCorridorToZone(polygon);
       const zoneId = addZone(polygon, corridorId, 50, 14);
       setIsDrawing(false);
+      setIsEraseMode(false);
       void analyzeZoneWithAgents({
         id: zoneId,
         name: "Drawn zone",
@@ -567,14 +580,26 @@ const LiveMap = () => {
             isDrawing={isDrawing}
             status={status}
             onZoneDrawn={handleZoneDrawn}
+            isEraseMode={isEraseMode}
+            onZoneErase={handleRemoveZone}
           />
           <TensionDrawer
             isDrawing={isDrawing}
-            onToggleDrawing={() => setIsDrawing(!isDrawing)}
+            isEraseMode={isEraseMode}
+            onToggleEraseMode={() => {
+              setIsDrawing(false);
+              setIsEraseMode((current) => !current);
+            }}
+            onToggleDrawing={() => {
+              setIsEraseMode(false);
+              setIsDrawing(!isDrawing);
+            }}
             onPreset={handlePreset}
             onClearAll={() => {
               clearAllZones();
+              analyzedZoneSignaturesRef.current = {};
               setAgentAnalyses({});
+              setIsEraseMode(false);
             }}
             hasZones={zones.length > 0}
           />
@@ -585,14 +610,7 @@ const LiveMap = () => {
             onAnalyzeZone={analyzeZoneWithAgents}
             onSetTension={setZoneTension}
             onSetDuration={setZoneDuration}
-            onRemoveZone={(id) => {
-              removeZone(id);
-              setAgentAnalyses((current) => {
-                const next = { ...current };
-                delete next[id];
-                return next;
-              });
-            }}
+            onRemoveZone={handleRemoveZone}
           />
         </div>
       </main>

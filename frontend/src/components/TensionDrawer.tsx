@@ -14,6 +14,8 @@ export type MaritimeRiskPreset =
 
 interface TensionDrawerProps {
   isDrawing: boolean;
+  isEraseMode?: boolean;
+  onToggleEraseMode?: () => void;
   onToggleDrawing: () => void;
   onPreset: (preset: MaritimeRiskPreset) => void;
   onClearAll: () => void;
@@ -33,7 +35,7 @@ const PRESETS: Array<{ key: MaritimeRiskPreset; label: string; meta: string }> =
   { key: "south-china-sea", label: "South China Sea", meta: "ASEAN/East Asia" },
 ];
 
-const TensionDrawer = ({ isDrawing, onToggleDrawing, onPreset, onClearAll, hasZones }: TensionDrawerProps) => {
+const TensionDrawer = ({ isDrawing, isEraseMode = false, onToggleEraseMode, onToggleDrawing, onPreset, onClearAll, hasZones }: TensionDrawerProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<MaritimeRiskPreset | "">("");
 
@@ -63,6 +65,21 @@ const TensionDrawer = ({ isDrawing, onToggleDrawing, onPreset, onClearAll, hasZo
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M1 11L11 1M11 1H4M11 1V8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
+          </button>
+
+          <button
+            type="button"
+            className={
+              "mb-2 flex w-full items-center justify-between rounded border px-3 py-2 transition-colors " +
+              (isEraseMode
+                ? "border-safe bg-safe/10 text-safe"
+                : "border-risk/60 text-[#FF8A8A] hover:bg-risk/10")
+            }
+            onClick={onToggleEraseMode}
+            disabled={!hasZones || !onToggleEraseMode}
+          >
+            <span>{isEraseMode ? "Erase Zone: ON" : "Erase Zone"}</span>
+            <span className="h-2 w-2 rounded-full" style={{ background: isEraseMode ? "#3FA796" : "#D64545" }} />
           </button>
 
           <label className="block border-t border-border pt-2">

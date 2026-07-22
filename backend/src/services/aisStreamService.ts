@@ -70,72 +70,78 @@ const SIMULATION_ENABLED =
 const AISSTREAM_ENABLED = process.env.AISSTREAM_ENABLED !== "false";
 
 const SIMULATED_ROUTES: [number, number][][] = [
-  // Route 1: Persian Gulf to Mumbai, kept in navigable water lanes.
+  // Route 1: Persian Gulf to Mumbai, held offshore through Hormuz and the Arabian Sea.
   [
-    [48.7, 29.4],
-    [49.6, 28.5],
-    [51.7, 27.2],
-    [54.3, 26.5],
-    [56.6, 26.45], // Hormuz sea lane
-    [59.5, 24.0],
-    [65.5, 21.0],
-    [72.5, 18.9]  // Mumbai
+    [51.2, 27.7],
+    [53.8, 26.9],
+    [56.5, 26.45],
+    [58.3, 25.2],
+    [61.8, 22.8],
+    [66.5, 20.4],
+    [70.8, 18.9],
+    [72.7, 18.6]
   ],
-  // Route 2: Suez/Red Sea to Cochin
+  // Route 2: Suez and Red Sea to India's west coast via open Gulf of Aden / Arabian Sea.
   [
-    [32.58, 31.27], // Suez North
-    [32.53, 29.93], // Suez South
-    [34.0, 27.5],
-    [38.0, 20.0],
-    [42.0, 14.5],
-    [43.3, 12.5],  // Bab-el-Mandeb
-    [47.0, 11.5],
-    [55.0, 14.0],
-    [65.0, 12.0],
-    [76.2, 9.9]   // Cochin
+    [32.55, 30.1],
+    [33.4, 27.5],
+    [36.8, 21.8],
+    [40.6, 16.0],
+    [43.3, 12.55],
+    [47.5, 11.4],
+    [55.5, 12.8],
+    [64.5, 11.3],
+    [72.2, 9.7],
+    [76.1, 9.5]
   ],
-  // Route 3: Singapore/Malacca to Chennai
+  // Route 3: Singapore/Malacca to Chennai, with waypoints south/east of Sri Lanka.
   [
-    [103.8, 1.2],   // Singapore
-    [101.4, 2.6],
-    [100.3, 3.8],
-    [98.6, 6.2],    // Malacca exit
-    [90.0, 7.5],
-    [80.3, 13.0],   // Chennai
+    [104.0, 1.25],
+    [102.0, 2.4],
+    [100.2, 4.0],
+    [96.8, 6.2],
+    [90.5, 7.1],
+    [84.3, 7.4],
+    [81.0, 8.6],
+    [80.2, 12.6]
   ],
-  // Route 4: Cape of Good Hope to Mumbai
+  // Route 4: Cape of Good Hope to Mumbai, offshore around South Africa and east of Madagascar.
   [
-    [18.0, -34.0],  // Cape of Good Hope
-    [30.0, -28.0],
-    [45.0, -16.0],
-    [60.0, 0.0],
-    [70.0, 10.0],
-    [72.5, 18.9]   // Mumbai
+    [16.4, -35.4],
+    [20.2, -37.0],
+    [27.8, -36.4],
+    [35.0, -33.0],
+    [43.2, -25.8],
+    [50.8, -17.2],
+    [56.6, -6.8],
+    [62.8, 3.6],
+    [68.6, 12.4],
+    [72.7, 18.6]
   ],
-  // Route 5: Red Sea to Mumbai
+  // Route 5: Red Sea to Mumbai, avoiding the Horn of Africa coastline.
   [
-    [32.53, 29.93],
-    [34.0, 27.5],
-    [38.0, 20.0],
-    [42.0, 14.5],
-    [43.3, 12.5],
-    [47.0, 11.5],
-    [55.0, 14.0],
-    [65.0, 15.0],
-    [72.5, 18.9]   // Mumbai
+    [33.0, 27.8],
+    [36.5, 22.4],
+    [40.0, 16.6],
+    [43.25, 12.55],
+    [48.0, 11.6],
+    [56.0, 13.2],
+    [64.4, 15.5],
+    [70.8, 18.2],
+    [72.7, 18.6]
   ],
-  // Route 6: Persian Gulf to Chennai, via open Arabian Sea and south of Sri Lanka.
+  // Route 6: Persian Gulf to Chennai, via Arabian Sea and around Sri Lanka.
   [
-    [48.7, 29.4],
-    [49.6, 28.5],
-    [51.7, 27.2],
-    [54.3, 26.5],
-    [56.6, 26.45],
-    [59.5, 24.0],
-    [65.0, 15.0],
-    [76.0, 5.8],
-    [82.0, 8.6],
-    [80.3, 13.0]   // Chennai approach
+    [51.2, 27.7],
+    [54.0, 26.8],
+    [56.5, 26.45],
+    [59.4, 23.7],
+    [64.8, 17.0],
+    [70.5, 10.0],
+    [76.8, 6.0],
+    [80.4, 6.0],
+    [82.0, 8.4],
+    [80.2, 12.6]
   ]
 ];
 
@@ -265,7 +271,7 @@ class AisStreamService {
       const routeIndex = i % SIMULATED_ROUTES.length;
       const progress = 0.05 + Math.random() * 0.9;
       const speed = 11 + Math.random() * 6; // 11-17 knots
-      const isForward = Math.random() > 0.5;
+      const isForward = true;
 
       const mid = mids[i % mids.length];
       const mmsi = mid * 1000000 + Math.floor(100000 + Math.random() * 899999);
@@ -308,18 +314,9 @@ class AisStreamService {
       const speedFactor = 0.0003 + (v.speed / 15) * 0.0002;
       const step = speedFactor;
 
-      if (v.isForward) {
-        v.progress += step;
-        if (v.progress >= 1.0) {
-          v.progress = 1.0;
-          v.isForward = false;
-        }
-      } else {
-        v.progress -= step;
-        if (v.progress <= 0.0) {
-          v.progress = 0.0;
-          v.isForward = true;
-        }
+      v.progress += step;
+      if (v.progress >= 1.0) {
+        v.progress -= 1.0;
       }
 
       const path = SIMULATED_ROUTES[v.routeIndex];

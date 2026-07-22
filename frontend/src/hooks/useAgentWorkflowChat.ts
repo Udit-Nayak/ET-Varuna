@@ -27,6 +27,25 @@ export interface ChatSessionSummary {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const ACTIVE_CHAT_STORAGE_KEY = "sentrix.activeChatSession";
+const NEW_CHAT_MARKER = "__new__";
+
+const getStoredActiveChat = () => {
+  try {
+    return window.localStorage.getItem(ACTIVE_CHAT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const setStoredActiveChat = (value: string | null) => {
+  try {
+    if (value) window.localStorage.setItem(ACTIVE_CHAT_STORAGE_KEY, value);
+    else window.localStorage.removeItem(ACTIVE_CHAT_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures in private/incognito contexts.
+  }
+};
 
 const makeId = () =>
   crypto.randomUUID?.() ?? `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -256,7 +275,9 @@ export const useAgentWorkflowChat = () => {
       try {
         const payload = await chatFetch(`/api/chat/sessions/${sessionId}`);
         const session = payload.session ?? {};
-        setActiveSessionId(String(session._id ?? session.id ?? sessionId));
+        const nextSessionId = String(session._id ?? session.id ?? sessionId);
+        setActiveSessionId(nextSessionId);
+        setStoredActiveChat(nextSessionId);
         setMessages(Array.isArray(session.messages) && session.messages.length > 0 ? session.messages : [starterMessage()]);
         setLatestWorkflow(session.latestWorkflow ?? null);
         setHistoryOpen(false);
@@ -288,8 +309,16 @@ export const useAgentWorkflowChat = () => {
         if (cancelled) return;
         const nextSessions = Array.isArray(payload.sessions) ? (payload.sessions as ChatSessionSummary[]) : [];
         setSessions(nextSessions);
-        if (nextSessions[0]) {
-          await loadSession(nextSessions[0].id);
+        const preferredSession = getStoredActiveChat();
+        if (preferredSession === NEW_CHAT_MARKER) {
+          setActiveSessionId(null);
+          setLatestWorkflow(null);
+          setMessages([starterMessage("New chat ready. Draw a tension zone or ask any supply-chain risk question.")]);
+          return;
+        }
+        const sessionToLoad = nextSessions.find((session) => session.id === preferredSession) ?? nextSessions[0];
+        if (sessionToLoad) {
+          await loadSession(sessionToLoad.id);
         }
       })
       .catch((error) => console.warn("Chat history load skipped:", error))
@@ -325,7 +354,10 @@ export const useAgentWorkflowChat = () => {
       } else {
         const payload = await chatFetch("/api/chat/sessions", { method: "POST", body });
         const id = String(payload.session?._id ?? payload.session?.id ?? "");
-        if (id) setActiveSessionId(id);
+        if (id) {
+          setActiveSessionId(id);
+          setStoredActiveChat(id);
+        }
       }
       await refreshSessions();
     } catch (error) {
@@ -450,6 +482,7 @@ export const useAgentWorkflowChat = () => {
   }, [chatFetch]);
 
   const startNewChat = useCallback(() => {
+    setStoredActiveChat(NEW_CHAT_MARKER);
     setLatestWorkflow(null);
     setActiveSessionId(null);
     setHistoryOpen(false);
