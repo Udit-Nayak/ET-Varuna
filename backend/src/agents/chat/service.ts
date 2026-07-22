@@ -404,13 +404,6 @@ const formatNumber = (value: unknown, digits = 2): string => {
 const formatBarrels = (value: unknown): string =>
   Math.round(Number(value) || 0).toLocaleString("en-US") + " bbl";
 
-const selectRows = <T>(rows: T[] = [], count = 6): T[] => {
-  if (rows.length <= count) return rows;
-  const first = rows.slice(0, Math.ceil(count / 2));
-  const last = rows.slice(-Math.floor(count / 2));
-  return [...first, ...last];
-};
-
 const fallbackAgentOutputFormat = (agent: AgentOutputFormatTarget, payload: any): string => {
   const upper = agent.toUpperCase();
   const data = payload?.[agent] ?? payload;
@@ -419,7 +412,7 @@ const fallbackAgentOutputFormat = (agent: AgentOutputFormatTarget, payload: any)
   if (agent === "dsm") {
     const timeline = Array.isArray(data.impact_timeline) ? data.impact_timeline : [];
     const assumptions = data.assumptions ?? {};
-    const timelineLines = selectRows(timeline, 8).map((day: any) =>
+    const timelineLines = timeline.map((day: any) =>
       "Day " + day.day + ": refinery output " + formatNumber(day.refinery_output_pct) + "%, price change " + formatNumber(day.price_change_pct) + "%, GDP impact " + formatNumber(day.gdp_impact_pct) + "%"
     );
     return [
@@ -437,7 +430,6 @@ const fallbackAgentOutputFormat = (agent: AgentOutputFormatTarget, payload: any)
       "",
       "Impact Timeline",
       ...(timelineLines.length ? timelineLines : ["No timeline rows returned."]),
-      timeline.length > timelineLines.length ? "Timeline condensed: showing first and last high-signal rows from " + timeline.length + " total days." : "",
       "",
       "Assumptions",
       "Baseline refinery output: " + formatNumber(assumptions.baselineRefineryOutputPct) + "%",
@@ -459,7 +451,7 @@ const fallbackAgentOutputFormat = (agent: AgentOutputFormatTarget, payload: any)
     const schedule = Array.isArray(data.drawdown_schedule) ? data.drawdown_schedule : [];
     const gaps = Array.isArray(data.remaining_supply_gap) ? data.remaining_supply_gap : [];
     const operational = data.operational_data ?? {};
-    const scheduleLines = selectRows(schedule, 8).map((day: any) =>
+    const scheduleLines = schedule.map((day: any) =>
       "Day " + day.day + ": release " + formatBarrels(day.release_volume) + ", forecast gap " + formatBarrels(day.forecast_gap_volume) + ", unfulfilled " + formatBarrels(day.unfulfilled_volume) + ", reserve after " + formatNumber(day.reserve_after_plan_days) + " days"
     );
     const gapTotal = gaps.reduce((sum: number, day: any) => sum + Math.max(0, Number(day.unfulfilled_volume)), 0);
@@ -485,7 +477,6 @@ const fallbackAgentOutputFormat = (agent: AgentOutputFormatTarget, payload: any)
       "",
       "Reserve Drawdown Schedule",
       ...(scheduleLines.length ? scheduleLines : ["No drawdown schedule returned."]),
-      schedule.length > scheduleLines.length ? "Schedule condensed: showing first and last high-signal rows from " + schedule.length + " total days." : "",
       "",
       "Interpretation",
       data.summary ?? "No SROA summary returned.",
@@ -555,7 +546,8 @@ export const formatAgentOutput = async (
       "For DSM, explain the day-by-day impact timeline, assumptions, refinery output, price impact, and GDP/power stress meaning.",
       "For SROA, explain operational data used, reserve drawdown schedule, remaining gaps, safety floor, and why the chosen policy releases that amount.",
       "For APO, explain total volume needed, ranked suppliers/routes, cost, transit, route risk, compatibility, and why the top option wins.",
-      "If arrays are long, summarize ranges and show representative first/peak/last rows with exact values.",
+      "For DSM impact_timeline and SROA drawdown_schedule, show every day when there are 31 rows or fewer.",
+      "If a DSM/SROA timeline is longer than 31 rows, group it by week with weekly ranges and avoid listing every day number.",
       "Do not use markdown tables. Use readable bullets and short paragraphs.",
     ].join(" "),
     3600

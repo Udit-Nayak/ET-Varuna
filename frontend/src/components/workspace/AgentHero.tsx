@@ -264,7 +264,7 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
         </motion.h1>
         <motion.p
           variants={item}
-          className="mt-5 max-w-2xl text-sm font-medium leading-relaxed text-ink/95 drop-shadow-[0_2px_18px_rgba(0,0,0,0.95)] md:text-base"
+          className="shiny-gradient-text mt-5 max-w-2xl text-sm font-semibold leading-relaxed md:text-base"
         >
           Monitor corridors, query the agent workflow, and move from geopolitical signal to operational response in one focused workspace.
         </motion.p>
@@ -273,16 +273,16 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
           {showcaseAgents.map((agent) => (
             <div
               key={agent.code}
-              className="group relative flex min-h-[4.35rem] items-center gap-3 rounded-md border border-border/90 bg-surface/78 px-4 py-3 text-left shadow-lg shadow-base/35 backdrop-blur transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-surface/95 hover:shadow-2xl hover:shadow-amber/10"
+              className="hero-agent-card group relative flex min-h-[6.25rem] items-start gap-3 rounded-md border border-border/80 px-4 py-3.5 text-left shadow-lg shadow-base/45 backdrop-blur-md transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-[#121924]/88 hover:shadow-2xl hover:shadow-amber/10"
             >
-              <span className="shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
+              <span className="mt-0.5 shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
                 {agent.code}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-display text-sm font-semibold text-ink transition-colors duration-200 group-hover:text-white">
+                <div className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors duration-200 group-hover:text-white">
                   {agent.name}
                 </div>
-                <div className="truncate text-xs leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">
+                <div className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">
                   {agent.desc}
                 </div>
               </div>

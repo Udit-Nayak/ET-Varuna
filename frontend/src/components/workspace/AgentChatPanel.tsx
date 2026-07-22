@@ -179,7 +179,7 @@ const TfmOutputView = ({ compact, workflow }: { compact: boolean; workflow: Agen
         </div>
       </div>
 
-      <div className={(compact ? "p-3" : "p-5") + " min-h-0 flex-1 overflow-y-auto"}>
+      <div className={(compact ? "p-3" : "p-5") + " scrollbar-hide min-h-0 flex-1 overflow-y-auto"}>
         {error && <div className="mb-3 rounded border border-risk/60 bg-risk/10 p-3 font-mono text-xs text-risk">{error}</div>}
         {!snapshot ? (
           <div className="rounded-md border border-border bg-base/70 p-4 font-mono text-sm text-muted">Loading TFM live dashboard...</div>
@@ -360,7 +360,7 @@ const AgentContextChat = ({
       </div>
 
       {messages.length > 0 && (
-        <div ref={messageListRef} className="mb-3 max-h-44 space-y-2 overflow-y-auto rounded border border-border bg-surface/60 p-2">
+        <div ref={messageListRef} className="scrollbar-hide mb-3 max-h-44 space-y-2 overflow-y-auto rounded border border-border bg-surface/60 p-2">
           {messages.map((message) => (
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[92%] rounded border border-amber/40 bg-amber/10 p-2 text-sm text-ink" : "max-w-[96%] rounded border border-border bg-base/80 p-2 text-sm leading-6 text-ink/90"}>
               <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted">
@@ -482,12 +482,12 @@ const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null;
             <p className="mt-1 font-mono text-[11px] text-muted">Corridor: {workflow?.corridor ?? workflow?.normalized?.corridor ?? "latest workflow"}</p>
           </div>
           <div className="rounded border border-border bg-surface px-3 py-2 font-mono text-[10px] text-muted">
-            {isFormatting ? "Formatting with Gemini..." : error ? "Detailed fallback shown" : usedGemini ? "Gemini formatted" : "Detailed fallback shown"}
+            {isFormatting ? "Formatting with LLM..." : error ? "Detailed fallback shown" : usedGemini ? "LLM formatted" : "Detailed fallback shown"}
           </div>
         </div>
       </div>
 
-      <div className={`${compact ? "p-3" : "p-5"} min-h-0 flex-1 overflow-y-auto`}>
+      <div className={`${compact ? "p-3" : "p-5"} scrollbar-hide min-h-0 flex-1 overflow-y-auto`}>
         {error && <div className="mb-3 rounded border border-risk/60 bg-risk/10 p-3 font-mono text-xs text-risk">{error}</div>}
         <article className="rounded-md border border-border bg-base/70 p-4 shadow-inner shadow-base/30">
           <div className="whitespace-pre-wrap text-sm leading-7 text-ink/90">{formatted || localSummary(agent, workflow)}</div>
@@ -629,7 +629,7 @@ const AgentChatPanel = ({
           )}
           <div className="min-w-0 flex flex-1 flex-col">
           {zones.length > 0 && (
-            <div className={`${compact ? "px-3 py-3" : "px-5 py-4"} max-h-56 overflow-y-auto border-b border-border bg-base/35`}>
+            <div className={`${compact ? "px-3 py-3" : "px-5 py-4"} scrollbar-hide max-h-56 overflow-y-auto border-b border-border bg-base/35`}>
               <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted">Active tension zones</div>
               <div className="space-y-2">
                 {zones.map((zone) => (
@@ -677,7 +677,7 @@ const AgentChatPanel = ({
             </div>
           )}
 
-            <div ref={scrollRef} className={`${compact ? "p-3" : "p-5"} min-h-0 flex-1 overflow-y-auto`}>
+            <div ref={scrollRef} className={`${compact ? "p-3" : "p-5"} scrollbar-hide min-h-0 flex-1 overflow-y-auto`}>
               <div className={compact ? "space-y-4" : "space-y-6"}>
                 {groupConversationTurns(messages).map((turn, index) => (
                   <section
@@ -775,7 +775,7 @@ const ChatHistorySidebar = ({
       </button>
     </div>
 
-    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+    <div className="scrollbar-hide min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
       {isLoading ? (
         <div className="rounded border border-border bg-surface px-3 py-2 font-mono text-xs text-muted">Loading saved chats...</div>
       ) : sessions.length === 0 ? (

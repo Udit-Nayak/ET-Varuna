@@ -42,6 +42,15 @@ const AgentShowcase = ({ onProgressChange }: AgentShowcaseProps) => {
 
   return (
     <section ref={wrapperRef} className="relative z-10" style={{ height: `${showcaseAgents.length * 100}vh` }}>
+      {showcaseAgents.map((agent, index) => (
+        <div
+          key={`${agent.code}-anchor`}
+          id={`agent-showcase-${agent.code.toLowerCase()}`}
+          className="absolute left-0 h-px w-px scroll-mt-[72px]"
+          style={{ top: `${index * 100}vh` }}
+          aria-hidden="true"
+        />
+      ))}
       <div className="sticky top-[65px] h-[calc(100vh-65px)] overflow-hidden">
         <div className="absolute left-6 top-1/2 z-20 hidden -translate-y-1/2 flex-col items-center gap-3 md:flex">
           <div className="h-44 w-px overflow-hidden rounded-full bg-border">

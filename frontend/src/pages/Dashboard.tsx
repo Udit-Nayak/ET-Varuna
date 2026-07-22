@@ -190,11 +190,11 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-base text-ink">
-      <Navbar />
+      <Navbar workspaceMode={isWorkspace} />
 
       <motion.div
         className={`fixed ${isWorkspace ? "z-20 pointer-events-auto" : "z-0 pointer-events-none"}`}
-        style={{ top: NAV_HEIGHT, bottom: 0 }}
+        style={{ top: isWorkspace ? NAV_HEIGHT : 0, bottom: 0 }}
         animate={mapTarget}
         transition={{ duration: 0.55, ease: "easeInOut" }}
         onAnimationComplete={requestMapResize}

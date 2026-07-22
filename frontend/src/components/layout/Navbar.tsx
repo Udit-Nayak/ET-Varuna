@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
@@ -14,6 +15,14 @@ type MiniChatMessage = {
 const makeChatId = () =>
   crypto.randomUUID?.() ?? `mini-chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+const agentNavItems = [
+  { label: "GRIA", target: "agent-showcase-gria" },
+  { label: "DSM", target: "agent-showcase-dsm" },
+  { label: "SROA", target: "agent-showcase-sroa" },
+  { label: "APO", target: "agent-showcase-apo" },
+  { label: "Digital Twin", target: "agent-showcase-scdt" },
+];
+
 const getInitials = (displayName?: string | null, email?: string | null) => {
   const source = displayName || email?.split("@")[0] || "Operator";
   const words = source.trim().split(/\s+/);
@@ -21,7 +30,11 @@ const getInitials = (displayName?: string | null, email?: string | null) => {
   return `${words[0][0]}${words[1][0]}`.toUpperCase();
 };
 
-const Navbar = () => {
+interface NavbarProps {
+  workspaceMode?: boolean;
+}
+
+const Navbar = ({ workspaceMode = true }: NavbarProps) => {
   const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -29,6 +42,7 @@ const Navbar = () => {
   const [query, setQuery] = useState("");
   const [chatMessages, setChatMessages] = useState<MiniChatMessage[]>([]);
   const [isBusy, setIsBusy] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const displayName = profile?.displayName || user?.displayName || "Operator";
@@ -42,6 +56,13 @@ const Navbar = () => {
   }, [chatOpen]);
 
   useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 18);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
     const node = chatScrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [chatMessages, chatOpen]);
@@ -49,6 +70,16 @@ const Navbar = () => {
   const handleLogout = async () => {
     await logout();
     navigate("/", { replace: true });
+  };
+
+  const scrollToAgent = (target: string) => {
+    const element = document.getElementById(target);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    navigate("/dashboard");
+    window.setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
   };
 
   const handleAsk = async (event: FormEvent) => {
@@ -97,19 +128,62 @@ const Navbar = () => {
     }
   };
 
+  const shouldFloat = isScrolled && !workspaceMode;
+
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-base/90 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-        <Link to="/dashboard" className="flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
-          <span className="font-display text-lg font-semibold tracking-tight text-ink">Sentrix</span>
+    <motion.header
+      initial={false}
+      animate={{
+        backgroundColor: shouldFloat ? "rgba(11,15,20,0)" : isScrolled ? "rgba(11,15,20,0.92)" : "rgba(11,15,20,0.74)",
+        boxShadow: shouldFloat ? "0 0 0 rgba(0,0,0,0)" : isScrolled ? "0 16px 44px rgba(0,0,0,0.34)" : "0 0 0 rgba(0,0,0,0)",
+      }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className={`sticky top-0 z-50 border-b transition-colors duration-300 ${
+        shouldFloat ? "border-transparent" : isScrolled ? "border-amber/20 backdrop-blur-xl" : "border-border backdrop-blur-xl"
+      }`}
+    >
+      <motion.div
+        initial={false}
+        animate={{
+          y: shouldFloat ? 10 : 0,
+          width: shouldFloat ? "calc(100% - 2rem)" : "100%",
+          borderRadius: shouldFloat ? 14 : 0,
+          backgroundColor: shouldFloat ? "rgba(11,15,20,0.82)" : "rgba(11,15,20,0)",
+          borderColor: shouldFloat ? "rgba(232,163,61,0.24)" : "rgba(36,48,61,0)",
+          boxShadow: shouldFloat ? "0 18px 48px rgba(0,0,0,0.38)" : "0 0 0 rgba(0,0,0,0)",
+        }}
+        transition={{ duration: 0.26, ease: "easeOut" }}
+        className="mx-auto grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4 overflow-hidden border px-5 sm:px-6"
+      >
+        <Link to="/dashboard" className="group flex items-center gap-2">
+          <span className="relative flex h-4 w-4 items-center justify-center">
+            <span className="absolute h-2.5 w-2.5 animate-pulseDot rounded-full bg-amber" />
+            <span className="h-1.5 w-1.5 rounded-full bg-ink transition-colors group-hover:bg-amber" />
+          </span>
+          <span className="font-display text-xl font-semibold tracking-tight text-ink">Sentrix</span>
         </Link>
 
-        <div className="flex items-center gap-3">
+        <nav className="hidden min-w-0 justify-center md:flex" aria-label="Agent showcase navigation">
+          <div className="flex max-w-full items-center gap-4 overflow-x-auto">
+            {agentNavItems.map((item) => (
+              <button
+                key={item.target}
+                type="button"
+                onClick={() => scrollToAgent(item.target)}
+                className="group relative whitespace-nowrap py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted transition-colors duration-200 hover:text-ink focus:text-ink"
+              >
+                {item.label}
+                <span className="absolute inset-x-0 bottom-0 h-px origin-left scale-x-0 bg-gradient-to-r from-transparent via-amber to-transparent transition-transform duration-300 group-hover:scale-x-100 group-focus:scale-x-100" />
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <div className="flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={() => setChatOpen((value) => !value)}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-amber/50 bg-surface text-[11px] font-semibold text-amber shadow-sm shadow-base/30 transition-colors hover:bg-amber/10"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-amber/50 bg-surface text-[11px] font-semibold text-amber shadow-sm shadow-base/30 transition-colors hover:bg-amber hover:text-base"
             aria-label="AI bot"
             title="AI bot"
           >
@@ -117,39 +191,39 @@ const Navbar = () => {
           </button>
 
           <div className="relative">
-          <button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-amber/50 bg-surface font-mono text-xs font-semibold text-amber transition-colors hover:bg-amber/10"
-            aria-label="Open profile menu"
-          >
-            {profile?.photoURL ? <img src={profile.photoURL} alt="" className="h-full w-full object-cover" /> : initials}
-          </button>
-          {open && (
-            <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
-              <div className="border-b border-border px-3 py-2">
-                <div className="truncate text-ink">{displayName}</div>
-                <div className="truncate text-[11px]">{email}</div>
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-amber/50 bg-surface font-mono text-xs font-semibold text-amber transition-colors hover:bg-amber hover:text-base"
+              aria-label="Open profile menu"
+            >
+              {profile?.photoURL ? <img src={profile.photoURL} alt="" className="h-full w-full object-cover" /> : initials}
+            </button>
+            {open && (
+              <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
+                <div className="border-b border-border px-3 py-2">
+                  <div className="truncate text-ink">{displayName}</div>
+                  <div className="truncate text-[11px]">{email}</div>
+                </div>
+                <Link
+                  to="/profile"
+                  onClick={() => setOpen(false)}
+                  className="block px-3 py-2 transition-colors hover:bg-amber/10 hover:text-amber"
+                >
+                  Profile
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="block w-full px-3 py-2 text-left transition-colors hover:bg-risk/10 hover:text-risk"
+                >
+                  Sign out
+                </button>
               </div>
-              <Link
-                to="/profile"
-                onClick={() => setOpen(false)}
-                className="block px-3 py-2 transition-colors hover:bg-amber/10 hover:text-amber"
-              >
-                Profile
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="block w-full px-3 py-2 text-left transition-colors hover:bg-risk/10 hover:text-risk"
-              >
-                Sign out
-              </button>
-            </div>
-          )}
+            )}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {chatOpen && (
         <div className="fixed right-6 top-20 z-50 w-[min(30rem,calc(100vw-1.5rem))] rounded-md border border-amber/40 bg-surface/95 shadow-2xl shadow-base/70 backdrop-blur">
@@ -222,7 +296,7 @@ const Navbar = () => {
           </form>
         </div>
       )}
-    </header>
+    </motion.header>
   );
 };
 
