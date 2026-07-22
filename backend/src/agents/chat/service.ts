@@ -1,12 +1,13 @@
-import { runApoRecommendation } from "../apo/service";
 import { ApoOutput } from "../apo/types";
-import { runDsmSimulation } from "../dsm/service";
 import { DsmSimulationOutput } from "../dsm/types";
-import { queryVectorKnowledge } from "../gria/service";
-import { runSroaOptimization } from "../sroa/service";
 import { SroaOutput, SroaPolicy } from "../sroa/types";
+import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { asEnum, asNumberRange, asString, asStringArray, extractJsonObject, safeParseWithOptionalZod, validateObject } from "../langchain/parser";
+import { promptBlock, sentrixJsonInstruction } from "../langchain/promptTemplates";
+import { sentrixToolHandlers } from "../langchain/tools";
+import { traceSentrixStep } from "../langchain/trace";
 
-const GROQ_INSTANT_MODEL = "llama-3.1-8b-instant";
+const GROQ_INSTANT_MODEL = SENTRIX_GROQ_MODEL;
 const GROQ_MODEL = GROQ_INSTANT_MODEL;
 const GROQ_CHATBOT_MODEL = GROQ_INSTANT_MODEL;
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -35,6 +36,27 @@ export interface DirectChatbotAnswer {
 const extractGroqText = (payload: any): string =>
   String(payload?.choices?.[0]?.message?.content ?? "").trim();
 
+const groqTimeoutMs = (): number => Math.max(5000, Number(process.env.GROQ_TIMEOUT_MS ?? 30000));
+const groqRetryCount = (): number => Math.max(0, Math.min(2, Number(process.env.GROQ_MAX_RETRIES ?? 1)));
+
+const fetchGroqWithTimeout = async (body: Record<string, unknown>, apiKey: string): Promise<Response> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), groqTimeoutMs());
+  try {
+    return await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const callGroq = async (
   prompt: string,
   systemInstruction: string,
@@ -44,14 +66,19 @@ const callGroq = async (
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
 
+  const langChainResult = await invokeGroqChatWithLangChain({
+    prompt,
+    systemInstruction,
+    maxOutputTokens,
+    model,
+    traceName: "sentrix-groq-chat",
+  });
+  if (langChainResult?.text) return langChainResult.text;
+
   try {
-    const response = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
+    let lastPayload: unknown = null;
+    for (let attempt = 0; attempt <= groqRetryCount(); attempt += 1) {
+      const response = await fetchGroqWithTimeout({
         model,
         messages: [
           { role: "system", content: systemInstruction },
@@ -59,15 +86,19 @@ const callGroq = async (
         ],
         temperature: 0.25,
         max_tokens: maxOutputTokens,
-      }),
-    });
+      }, apiKey);
 
-    const payload = await response.json();
-    if (!response.ok) {
-      console.warn("Groq request failed:", payload);
-      return null;
+      const payload = await response.json();
+      lastPayload = payload;
+      if (response.ok) return extractGroqText(payload);
+      if (response.status !== 429 || attempt >= groqRetryCount()) {
+        console.warn("Groq request failed:", payload);
+        return null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
     }
-    return extractGroqText(payload);
+    console.warn("Groq request failed:", lastPayload);
+    return null;
   } catch (error) {
     console.warn("Groq request skipped:", error);
     return null;
@@ -133,15 +164,6 @@ interface NormalizedQuestion {
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-const parseJsonObject = <T>(text: string): T | null => {
-  try {
-    const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text.match(/\{[\s\S]*\}/)?.[0] ?? text;
-    return JSON.parse(jsonText) as T;
-  } catch {
-    return null;
-  }
-};
 
 const policyFromTension = (tensionPct: number): SroaPolicy => {
   if (tensionPct >= 75) return "aggressive";
@@ -216,47 +238,62 @@ const normalizeQuestion = async (question: string): Promise<{ normalized: Normal
   const fallback = fallbackNormalizedQuestion(question);
   const text = await callGroq(
     question,
-    [
+    promptBlock([
       "You convert messy operator questions into inputs for an energy supply-chain risk system.",
       "Correct spelling mistakes and infer the intended corridor or topic.",
-      "Return JSON only with keys: normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy.",
+      sentrixJsonInstruction("{ normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy }"),
       "userIntent must be one of corridor_risk, scenario_analysis, reserve_planning, procurement, general.",
       "policy must be conservative, balanced, or aggressive.",
       "tensionPct is 0-100 and durationDays is 1-90.",
       "Prefer India crude oil, maritime chokepoints, trade routes, foreign affairs, and supply-chain resilience context.",
-    ].join(" "),
+    ]),
     700
   );
 
-  const parsed = text ? parseJsonObject<Partial<NormalizedQuestion>>(text) : null;
+  const parsed = text ? extractJsonObject<Partial<NormalizedQuestion>>(text) : null;
   if (!parsed) return { normalized: fallback, usedGroq: false };
 
-  const tensionPct = clamp(Number(parsed.tensionPct ?? fallback.tensionPct), 0, 100);
+  const zodValidated = await safeParseWithOptionalZod<NormalizedQuestion>((zod) => {
+    const z = zod.z ?? zod;
+    return z.object({
+      normalizedQuery: z.string().min(1),
+      userIntent: z.enum(["corridor_risk", "scenario_analysis", "reserve_planning", "procurement", "general"]),
+      corridor: z.string().min(1),
+      keywords: z.array(z.string()).min(1),
+      scenarioText: z.string().min(1),
+      tensionPct: z.number().min(0).max(100),
+      durationDays: z.number().int().min(1).max(90),
+      policy: z.enum(["conservative", "balanced", "aggressive"]),
+    });
+  }, parsed);
+
+  const validated = zodValidated ?? validateObject<NormalizedQuestion>(parsed, fallback, {
+    normalizedQuery: asString,
+    userIntent: asEnum(["corridor_risk", "scenario_analysis", "reserve_planning", "procurement", "general"] as const),
+    corridor: asString,
+    keywords: asStringArray,
+    scenarioText: asString,
+    tensionPct: asNumberRange(0, 100),
+    durationDays: asNumberRange(1, 90, true),
+    policy: asEnum(["conservative", "balanced", "aggressive"] as const),
+  });
+
+  const tensionPct = clamp(Number(validated.tensionPct), 0, 100);
   const policy =
     parsed.policy === "conservative" || parsed.policy === "balanced" || parsed.policy === "aggressive"
       ? parsed.policy
       : policyFromTension(tensionPct);
-  const userIntent =
-    parsed.userIntent === "corridor_risk" ||
-    parsed.userIntent === "scenario_analysis" ||
-    parsed.userIntent === "reserve_planning" ||
-    parsed.userIntent === "procurement" ||
-    parsed.userIntent === "general"
-      ? parsed.userIntent
-      : fallback.userIntent;
-  const corridor = String(parsed.corridor ?? fallback.corridor).trim() || fallback.corridor;
-  const normalizedQuery = String(parsed.normalizedQuery ?? fallback.normalizedQuery).trim() || fallback.normalizedQuery;
 
   return {
     usedGroq: true,
     normalized: {
-      normalizedQuery,
-      userIntent,
-      corridor,
-      keywords: Array.isArray(parsed.keywords) && parsed.keywords.length > 0 ? parsed.keywords.map(String) : fallback.keywords,
-      scenarioText: String(parsed.scenarioText ?? fallback.scenarioText),
+      normalizedQuery: validated.normalizedQuery,
+      userIntent: validated.userIntent,
+      corridor: validated.corridor,
+      keywords: validated.keywords,
+      scenarioText: validated.scenarioText,
       tensionPct,
-      durationDays: clamp(Math.round(Number(parsed.durationDays ?? fallback.durationDays)), 1, 90),
+      durationDays: clamp(Math.round(Number(validated.durationDays)), 1, 90),
       policy,
     },
   };
@@ -330,13 +367,19 @@ const synthesizeFinal = async (
 
 export const answerAgentChat = async (question: string): Promise<AgentChatAnswer> => {
   try {
+    traceSentrixStep({ workflow: "agent-chat", step: "normalize", status: "start" });
     const { normalized, usedGroq: usedGroqForNormalization } = await normalizeQuestion(question);
+    traceSentrixStep({ workflow: "agent-chat", step: "normalize", status: "success", details: { corridor: normalized.corridor, intent: normalized.userIntent } });
     const vectorQuery = [normalized.normalizedQuery, normalized.corridor, ...normalized.keywords].join(" ");
-    const griaMatches = (await queryVectorKnowledge({ query: vectorQuery, limit: 6 }).catch((error) => {
+    traceSentrixStep({ workflow: "agent-chat", step: "gria", status: "start" });
+    const griaMatches = (await sentrixToolHandlers.gria_retrieve({ query: vectorQuery, limit: 6 }).catch((error) => {
       console.warn("Chat GRIA retrieval unavailable; continuing with deterministic agents:", error instanceof Error ? error.message : error);
+      traceSentrixStep({ workflow: "agent-chat", step: "gria", status: "fallback", details: { error: error instanceof Error ? error.message : String(error) } });
       return [] as unknown[];
     })) as unknown[];
-    const dsm = await runDsmSimulation({
+    traceSentrixStep({ workflow: "agent-chat", step: "gria", status: "success", details: { matches: griaMatches.length } });
+    traceSentrixStep({ workflow: "agent-chat", step: "dsm", status: "start" });
+    const dsm = await sentrixToolHandlers.dsm_simulate({
       corridor: normalized.corridor,
       scenario_text: normalized.scenarioText,
       vector_query: vectorQuery,
@@ -344,21 +387,28 @@ export const answerAgentChat = async (question: string): Promise<AgentChatAnswer
       capacity_loss_pct: normalized.tensionPct,
       duration_days: normalized.durationDays,
     });
-    const sroa = await runSroaOptimization({
+    traceSentrixStep({ workflow: "agent-chat", step: "dsm", status: "success" });
+    traceSentrixStep({ workflow: "agent-chat", step: "sroa", status: "start" });
+    const sroa = await sentrixToolHandlers.sroa_optimize({
       corridor: normalized.corridor,
       policy: normalized.policy,
       dsm_output: dsm,
       scenario_text: normalized.scenarioText,
     });
-    const apo = await runApoRecommendation({
+    traceSentrixStep({ workflow: "agent-chat", step: "sroa", status: "success" });
+    traceSentrixStep({ workflow: "agent-chat", step: "apo", status: "start" });
+    const apo = await sentrixToolHandlers.apo_recommend({
       corridor: normalized.corridor,
       sroa_output: sroa,
       dsm_output: dsm,
       max_options: 3,
     });
+    traceSentrixStep({ workflow: "agent-chat", step: "apo", status: "success" });
     const griaSummary = summarizeGria(griaMatches, normalized);
+    traceSentrixStep({ workflow: "agent-chat", step: "synthesize", status: "start" });
     const synthesized = await synthesizeFinal(question, normalized, griaSummary, dsm, sroa, apo);
     const final = synthesized?.trim() || fallbackFinal(normalized, griaSummary, dsm, sroa, apo);
+    traceSentrixStep({ workflow: "agent-chat", step: "synthesize", status: synthesized?.trim() ? "success" : "fallback" });
 
     return {
       final,

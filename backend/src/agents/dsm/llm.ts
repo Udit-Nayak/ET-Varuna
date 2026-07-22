@@ -9,8 +9,10 @@ import {
   DsmSimulationOutput,
   DsmWorkflowInput,
 } from "./types";
+import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
 
 const apiKey = process.env.DSM_API_KEY || process.env.DSM_LLM_API_KEY || process.env.OPENAI_API_KEY || "";
+const provider = process.env.DSM_LLM_PROVIDER ?? "openai";
 const model = process.env.DSM_LLM_MODEL || "gpt-4o-mini";
 
 const extractJson = <T>(text: string): T | null => {
@@ -25,6 +27,22 @@ const extractJson = <T>(text: string): T | null => {
 };
 
 const callLlm = async (system: string, user: string): Promise<string | null> => {
+  if (provider === "groq" || provider === "langchain-groq") {
+    const groqModel =
+      process.env.DSM_LLM_MODEL && !process.env.DSM_LLM_MODEL.startsWith("gpt")
+        ? process.env.DSM_LLM_MODEL
+        : process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL;
+    const result = await invokeGroqChatWithLangChain({
+      model: groqModel,
+      systemInstruction: system,
+      prompt: user,
+      maxOutputTokens: 900,
+      temperature: 0.1,
+      traceName: "dsm-llm",
+    });
+    return result?.text ?? null;
+  }
+
   if (!apiKey) return null;
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

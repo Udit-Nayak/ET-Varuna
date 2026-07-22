@@ -1,4 +1,5 @@
 import { ApoCandidateScore, ApoInput, ApoLlmReasoning } from "./types";
+import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
 
 const geminiModel = process.env.APO_GEMINI_MODEL ?? process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
 const hfModel = process.env.APO_LLM_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.3";
@@ -85,6 +86,23 @@ const callHuggingFace = async (prompt: string): Promise<string | null> => {
 };
 
 const callConfiguredLlm = async (prompt: string): Promise<{ raw: string | null; usedProvider: string }> => {
+  if (provider === "groq" || provider === "langchain-groq") {
+    const result = await invokeGroqChatWithLangChain({
+      model: process.env.APO_LLM_MODEL || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+      systemInstruction: [
+        "You are APO, the Adaptive Procurement Orchestrator for an energy supply-chain dashboard.",
+        "The deterministic engine has already calculated and ranked procurement options.",
+        "Never change, recalculate, reorder, round aggressively, or invent numbers.",
+        "Your job is output formatting, plain-English reasoning, and sanity flags only.",
+        "Return strict JSON only.",
+      ].join(" "),
+      prompt,
+      maxOutputTokens: 1400,
+      temperature: 0.15,
+      traceName: "apo-llm",
+    });
+    return { raw: result?.text ?? null, usedProvider: result?.text ? "langchain-groq" : "fallback_rules" };
+  }
   if (provider === "gemini") {
     const raw = await callGemini(prompt);
     return { raw, usedProvider: raw ? "gemini" : "fallback_rules" };

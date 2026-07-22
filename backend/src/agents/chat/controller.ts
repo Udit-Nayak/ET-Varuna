@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
-import ChatSession from "../../models/ChatSession";
+import ChatSession, { ChatMemorySummaryDocument, ChatMessageDocument, ChatMessageRole, ChatMessageStatus } from "../../models/ChatSession";
 import { AuthedRequest } from "../../middleware/verifyFirebaseToken";
+import { summarizeChatMemory } from "../langchain/memory";
 import {
   answerAgentChat,
   answerAgentOutputQuestion,
@@ -111,24 +112,40 @@ const titleFromMessages = (messages: Array<{ role?: string; content?: string }> 
   return source.length > 56 ? `${source.slice(0, 53)}...` : source;
 };
 
-const cleanMessages = (messages: unknown) => {
+const cleanMessages = (messages: unknown): ChatMessageDocument[] => {
   if (!Array.isArray(messages)) return [];
   return messages
     .map((message) => {
       const item = message as Record<string, unknown>;
+      const role = String(item.role ?? "system");
+      const status = String(item.status ?? "done");
       return {
         id: String(item.id ?? ""),
-        role: String(item.role ?? "system"),
+        role,
         content: String(item.content ?? ""),
-        status: String(item.status ?? "done"),
+        status,
         timestamp: Number(item.timestamp ?? Date.now()),
       };
     })
     .filter((message) => message.id && message.content && ["system", "gria", "dsm", "sroa", "apo", "user"].includes(message.role))
     .map((message) => ({
-      ...message,
-      status: ["pending", "streaming", "done", "error"].includes(message.status) ? message.status : "done",
+      id: message.id,
+      role: message.role as ChatMessageRole,
+      content: message.content,
+      status: (["pending", "streaming", "done", "error"].includes(message.status) ? message.status : "done") as ChatMessageStatus,
+      timestamp: message.timestamp,
     }));
+};
+
+const buildMemorySummary = async (messages: ChatMessageDocument[]): Promise<ChatMemorySummaryDocument | undefined> => {
+  const result = await summarizeChatMemory(messages);
+  if (!result.summary || result.provider === "disabled" || !result.generatedAt) return undefined;
+  return {
+    summary: result.summary,
+    provider: result.provider,
+    generatedAt: new Date(result.generatedAt),
+    messageCount: messages.length,
+  };
 };
 
 export const listChatSessions = async (req: AuthedRequest, res: Response): Promise<void> => {
@@ -170,11 +187,13 @@ export const createChatSession = async (req: AuthedRequest, res: Response): Prom
     const firebaseUid = req.firebaseUser!.uid;
     const messages = cleanMessages(req.body?.messages);
     const title = String(req.body?.title ?? "").trim() || titleFromMessages(messages);
+    const memorySummary = await buildMemorySummary(messages);
     const session = await ChatSession.create({
       firebaseUid,
       title,
       messages,
       latestWorkflow: req.body?.latestWorkflow ?? null,
+      memorySummary: memorySummary ?? null,
       archived: false,
     });
 
@@ -209,6 +228,7 @@ export const updateChatSession = async (req: AuthedRequest, res: Response): Prom
   try {
     const messages = cleanMessages(req.body?.messages);
     const title = String(req.body?.title ?? "").trim() || titleFromMessages(messages);
+    const memorySummary = await buildMemorySummary(messages);
     const session = await ChatSession.findOneAndUpdate(
       { _id: req.params.id, firebaseUid: req.firebaseUser!.uid, archived: false },
       {
@@ -216,6 +236,7 @@ export const updateChatSession = async (req: AuthedRequest, res: Response): Prom
           title,
           messages,
           latestWorkflow: req.body?.latestWorkflow ?? null,
+          ...(memorySummary ? { memorySummary } : {}),
         },
       },
       { new: true }

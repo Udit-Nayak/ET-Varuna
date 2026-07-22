@@ -7,6 +7,7 @@ import {
   SroaPolicy,
   SroaSanityCheckResult,
 } from "./types";
+import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
 
 interface SroaLlmFormatResponse {
   corridor?: string;
@@ -92,6 +93,21 @@ const invokeLlm = async (prompt: string): Promise<string | null> => {
     return null;
   }
   try {
+    if (provider === "groq" || provider === "langchain-groq") {
+      const result = await invokeGroqChatWithLangChain({
+        model: process.env.SROA_LLM_MODEL || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+        systemInstruction: [
+          "You normalize or review SROA agent input/output for Sentrix.",
+          "Use the language model only for formatting, validation, and explanation.",
+          "Never recalculate reserve releases or invent operational data.",
+        ].join(" "),
+        prompt,
+        maxOutputTokens: 900,
+        temperature: 0.1,
+        traceName: "sroa-llm",
+      });
+      return result?.text ?? null;
+    }
     if (provider === "huggingface") {
       return await invokeHuggingFace(prompt);
     }

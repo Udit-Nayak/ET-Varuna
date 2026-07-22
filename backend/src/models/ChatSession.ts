@@ -11,11 +11,19 @@ export interface ChatMessageDocument {
   timestamp: number;
 }
 
+export interface ChatMemorySummaryDocument {
+  summary: string;
+  provider: "langchain-groq" | "deterministic";
+  generatedAt: Date;
+  messageCount: number;
+}
+
 export interface ChatSessionDocument {
   firebaseUid: string;
   title: string;
   messages: ChatMessageDocument[];
   latestWorkflow?: Record<string, unknown> | null;
+  memorySummary?: ChatMemorySummaryDocument | null;
   archived: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -34,12 +42,23 @@ const ChatMessageSchema = new Schema<ChatMessageDocument>(
   { _id: false }
 );
 
+const ChatMemorySummarySchema = new Schema<ChatMemorySummaryDocument>(
+  {
+    summary: { type: String, required: true },
+    provider: { type: String, required: true, enum: ["langchain-groq", "deterministic"] },
+    generatedAt: { type: Date, required: true },
+    messageCount: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
 const ChatSessionSchema = new Schema<ChatSessionMongooseDocument>(
   {
     firebaseUid: { type: String, required: true, index: true },
     title: { type: String, required: true, default: "New chat" },
     messages: { type: [ChatMessageSchema], default: [] },
     latestWorkflow: { type: Schema.Types.Mixed, default: null },
+    memorySummary: { type: ChatMemorySummarySchema, default: null },
     archived: { type: Boolean, required: true, default: false, index: true },
   },
   { timestamps: true, strict: true }

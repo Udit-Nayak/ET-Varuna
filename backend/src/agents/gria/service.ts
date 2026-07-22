@@ -6,6 +6,8 @@ import { PipelineInput, PipelineResult, NewsArticle, AnalysisResult, VectorDocum
 import { deleteById, findByCorridor, findByCountry, findById, findExistingVectorArticleIds, getHistory as getRiskHistory, getLatest as getLatestRisk, getNewsSources, getRecentVectorCandidates, replaceVectorDocumentsForArticle, updateNewsSourceFetchTime, upsertPipelineLogStatus, vectorSearch } from "./mongoRepository";
 import { getHighRiskCount } from "./analysisUtils";
 import { buildQueryEmbedding, vectorDocumentsFromArticle } from "./vectorizer";
+import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { extractJsonObject } from "../langchain/parser";
 
 const textSimilarity = (left: string, right: string): number => {
   const a = new Set(left.toLowerCase().split(/\W+/).filter(Boolean));
@@ -109,7 +111,50 @@ const geminiRerank = async (query: string, documents: VectorDocument[], limit: n
   }
 };
 
+const langChainGroqRerank = async (query: string, documents: VectorDocument[], limit: number): Promise<VectorDocument[] | null> => {
+  const provider = process.env.GRIA_RERANK_PROVIDER;
+  if (provider !== "langchain-groq" && provider !== "groq") return null;
+  if (documents.length === 0) return null;
+
+  const result = await invokeGroqChatWithLangChain({
+    model: process.env.GRIA_RERANK_MODEL || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+    maxOutputTokens: 450,
+    temperature: 0.1,
+    responseFormat: "json_object",
+    traceName: "gria-vector-rerank",
+    systemInstruction: [
+      "You rerank already-retrieved GRIA vector-search documents.",
+      "Do not invent documents or facts.",
+      "Return JSON only as {\"rankedIndexes\":[number,...]}.",
+      "Choose documents most useful for India energy supply-chain risk, oil markets, maritime chokepoints, sanctions, trade routes, and procurement/reserve decisions.",
+    ].join(" "),
+    prompt: JSON.stringify({
+      query,
+      limit,
+      documents: documents.map((document, index) => ({
+        index,
+        headline: document.headline,
+        summary: document.summary,
+        eventType: document.eventType,
+        severity: document.severity,
+        corridors: document.tradeCorridorsAffected,
+        countries: document.countriesInvolved,
+        content: document.content.slice(0, 650),
+      })),
+    }),
+  });
+
+  const parsed = result?.text ? extractJsonObject<{ rankedIndexes?: number[] }>(result.text) : null;
+  const ranked = (parsed?.rankedIndexes ?? [])
+    .map((index) => documents[index])
+    .filter((document): document is VectorDocument => Boolean(document));
+  return ranked.length > 0 ? ranked.slice(0, limit) : null;
+};
+
 const rerankVectorMatches = async (query: string, documents: VectorDocument[], limit: number): Promise<VectorDocument[]> => {
+  const langChainRanked = await langChainGroqRerank(query, documents, limit);
+  if (langChainRanked) return langChainRanked;
+
   const geminiRanked = await geminiRerank(query, documents, limit);
   if (geminiRanked) return geminiRanked;
 
