@@ -1,5 +1,5 @@
 import { ChatMessageDocument } from "../models/ChatSession";
-import { SENTRIX_GROQ_MODEL, invokeGroqChatWithLangChain } from "../agents/langchain/llm";
+import { Varuna_GROQ_MODEL, invokeGroqChatWithLangChain } from "../agents/langchain/llm";
 import {
   asEnum,
   asNumberRange,
@@ -9,9 +9,9 @@ import {
   safeParseWithOptionalZod,
   validateObject,
 } from "../agents/langchain/parser";
-import { promptBlock, sentrixJsonInstruction } from "../agents/langchain/promptTemplates";
+import { promptBlock, VarunaJsonInstruction } from "../agents/langchain/promptTemplates";
 import { summarizeChatMemory } from "../agents/langchain/memory";
-import { getOptionalLangChainTools, getSentrixToolDefinitions } from "../agents/langchain/tools";
+import { getOptionalLangChainTools, getVarunaToolDefinitions } from "../agents/langchain/tools";
 
 interface NormalizationSmoke {
   normalizedQuery: string;
@@ -30,10 +30,10 @@ const assert = (condition: unknown, message: string): void => {
 
 const run = async (): Promise<void> => {
   process.env.LANGCHAIN_ENABLED = "false";
-  process.env.SENTRIX_CHAT_MEMORY_SUMMARY_ENABLED = "true";
-  process.env.SENTRIX_CHAT_MEMORY_MIN_MESSAGES = "2";
+  process.env.Varuna_CHAT_MEMORY_SUMMARY_ENABLED = "true";
+  process.env.Varuna_CHAT_MEMORY_MIN_MESSAGES = "2";
 
-  assert(SENTRIX_GROQ_MODEL === "llama-3.1-8b-instant", "Groq model must stay llama-3.1-8b-instant");
+  assert(Varuna_GROQ_MODEL === "llama-3.1-8b-instant", "Groq model must stay llama-3.1-8b-instant");
 
   const langChainDisabled = await invokeGroqChatWithLangChain({
     prompt: "hello",
@@ -76,7 +76,7 @@ const run = async (): Promise<void> => {
   }, { normalizedQuery: "Hormuz risk" });
   if (zodParsed) assert(zodParsed.normalizedQuery === "Hormuz risk", "Optional Zod parser returned unexpected data");
 
-  const prompt = promptBlock(["A", sentrixJsonInstruction("{ ok: boolean }")]);
+  const prompt = promptBlock(["A", VarunaJsonInstruction("{ ok: boolean }")]);
   assert(prompt.includes("Return JSON only"), "Prompt helper should include JSON instruction");
 
   const messages: ChatMessageDocument[] = [
@@ -87,8 +87,8 @@ const run = async (): Promise<void> => {
   assert(summary.provider === "deterministic", "Memory summary should use deterministic fallback when LangChain is disabled");
   assert(summary.summary?.includes("malacca closed"), "Memory summary should preserve user question");
 
-  const toolDefinitions = getSentrixToolDefinitions();
-  assert(toolDefinitions.length >= 6, "Sentrix tool definitions should include all current agents and workflows");
+  const toolDefinitions = getVarunaToolDefinitions();
+  assert(toolDefinitions.length >= 6, "Varuna tool definitions should include all current agents and workflows");
   assert(toolDefinitions.some((tool) => tool.name === "gria_retrieve"), "Tool definitions should include GRIA");
   assert(toolDefinitions.some((tool) => tool.name === "tfm_snapshot"), "Tool definitions should include TFM digital twin");
 
@@ -96,7 +96,7 @@ const run = async (): Promise<void> => {
   assert(Array.isArray(optionalTools), "Optional LangChain tools should return an array even when package is absent");
 
   console.log("[LangChain safety] smoke verification passed", {
-    model: SENTRIX_GROQ_MODEL,
+    model: Varuna_GROQ_MODEL,
     toolDefinitions: toolDefinitions.map((tool) => tool.name),
     optionalToolsLoaded: optionalTools.length,
     memoryProvider: summary.provider,

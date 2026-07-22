@@ -1,13 +1,13 @@
 import { ApoOutput } from "../apo/types";
 import { DsmSimulationOutput } from "../dsm/types";
 import { SroaOutput, SroaPolicy } from "../sroa/types";
-import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { invokeGroqChatWithLangChain, Varuna_GROQ_MODEL } from "../langchain/llm";
 import { asEnum, asNumberRange, asString, asStringArray, extractJsonObject, safeParseWithOptionalZod, validateObject } from "../langchain/parser";
-import { promptBlock, sentrixJsonInstruction } from "../langchain/promptTemplates";
-import { sentrixToolHandlers } from "../langchain/tools";
-import { traceSentrixStep } from "../langchain/trace";
+import { promptBlock, VarunaJsonInstruction } from "../langchain/promptTemplates";
+import { VarunaToolHandlers } from "../langchain/tools";
+import { traceVarunaStep } from "../langchain/trace";
 
-const GROQ_INSTANT_MODEL = SENTRIX_GROQ_MODEL;
+const GROQ_INSTANT_MODEL = Varuna_GROQ_MODEL;
 const GROQ_MODEL = GROQ_INSTANT_MODEL;
 const GROQ_CHATBOT_MODEL = GROQ_INSTANT_MODEL;
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -71,7 +71,7 @@ const callGroq = async (
     systemInstruction,
     maxOutputTokens,
     model,
-    traceName: "sentrix-groq-chat",
+    traceName: "Varuna-groq-chat",
   });
   if (langChainResult?.text) return langChainResult.text;
 
@@ -244,7 +244,7 @@ const normalizeQuestion = async (question: string): Promise<{ normalized: Normal
     promptBlock([
       "You convert messy operator questions into inputs for an energy supply-chain risk system.",
       "Correct spelling mistakes and infer the intended corridor or topic.",
-      sentrixJsonInstruction("{ normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy }"),
+      VarunaJsonInstruction("{ normalizedQuery, userIntent, corridor, keywords, scenarioText, tensionPct, durationDays, policy }"),
       "userIntent must be one of corridor_risk, scenario_analysis, reserve_planning, procurement, general.",
       "policy must be conservative, balanced, or aggressive.",
       "tensionPct is 0-100 and durationDays is 1-90.",
@@ -359,7 +359,7 @@ const synthesizeFinal = async (
       2
     ),
     [
-      "You are Sentrix's operator-facing analyst.",
+      "You are Varuna's operator-facing analyst.",
       "Answer the user's question like a competent chat assistant, but ground the response in GRIA, DSM, SROA, and APO outputs.",
       "Be structured, concise, and actionable.",
       "Use headings: Direct answer, Agent outputs, Recommended next steps.",
@@ -370,19 +370,19 @@ const synthesizeFinal = async (
 
 export const answerAgentChat = async (question: string): Promise<AgentChatAnswer> => {
   try {
-    traceSentrixStep({ workflow: "agent-chat", step: "normalize", status: "start" });
+    traceVarunaStep({ workflow: "agent-chat", step: "normalize", status: "start" });
     const { normalized, usedGroq: usedGroqForNormalization } = await normalizeQuestion(question);
-    traceSentrixStep({ workflow: "agent-chat", step: "normalize", status: "success", details: { corridor: normalized.corridor, intent: normalized.userIntent } });
+    traceVarunaStep({ workflow: "agent-chat", step: "normalize", status: "success", details: { corridor: normalized.corridor, intent: normalized.userIntent } });
     const vectorQuery = [normalized.normalizedQuery, normalized.corridor, ...normalized.keywords].join(" ");
-    traceSentrixStep({ workflow: "agent-chat", step: "gria", status: "start" });
-    const griaMatches = (await sentrixToolHandlers.gria_retrieve({ query: vectorQuery, limit: 6 }).catch((error) => {
+    traceVarunaStep({ workflow: "agent-chat", step: "gria", status: "start" });
+    const griaMatches = (await VarunaToolHandlers.gria_retrieve({ query: vectorQuery, limit: 6 }).catch((error) => {
       console.warn("Chat GRIA retrieval unavailable; continuing with deterministic agents:", error instanceof Error ? error.message : error);
-      traceSentrixStep({ workflow: "agent-chat", step: "gria", status: "fallback", details: { error: error instanceof Error ? error.message : String(error) } });
+      traceVarunaStep({ workflow: "agent-chat", step: "gria", status: "fallback", details: { error: error instanceof Error ? error.message : String(error) } });
       return [] as unknown[];
     })) as unknown[];
-    traceSentrixStep({ workflow: "agent-chat", step: "gria", status: "success", details: { matches: griaMatches.length } });
-    traceSentrixStep({ workflow: "agent-chat", step: "dsm", status: "start" });
-    const dsm = await sentrixToolHandlers.dsm_simulate({
+    traceVarunaStep({ workflow: "agent-chat", step: "gria", status: "success", details: { matches: griaMatches.length } });
+    traceVarunaStep({ workflow: "agent-chat", step: "dsm", status: "start" });
+    const dsm = await VarunaToolHandlers.dsm_simulate({
       corridor: normalized.corridor,
       scenario_text: normalized.scenarioText,
       vector_query: vectorQuery,
@@ -390,28 +390,28 @@ export const answerAgentChat = async (question: string): Promise<AgentChatAnswer
       capacity_loss_pct: normalized.tensionPct,
       duration_days: normalized.durationDays,
     });
-    traceSentrixStep({ workflow: "agent-chat", step: "dsm", status: "success" });
-    traceSentrixStep({ workflow: "agent-chat", step: "sroa", status: "start" });
-    const sroa = await sentrixToolHandlers.sroa_optimize({
+    traceVarunaStep({ workflow: "agent-chat", step: "dsm", status: "success" });
+    traceVarunaStep({ workflow: "agent-chat", step: "sroa", status: "start" });
+    const sroa = await VarunaToolHandlers.sroa_optimize({
       corridor: normalized.corridor,
       policy: normalized.policy,
       dsm_output: dsm,
       scenario_text: normalized.scenarioText,
     });
-    traceSentrixStep({ workflow: "agent-chat", step: "sroa", status: "success" });
-    traceSentrixStep({ workflow: "agent-chat", step: "apo", status: "start" });
-    const apo = await sentrixToolHandlers.apo_recommend({
+    traceVarunaStep({ workflow: "agent-chat", step: "sroa", status: "success" });
+    traceVarunaStep({ workflow: "agent-chat", step: "apo", status: "start" });
+    const apo = await VarunaToolHandlers.apo_recommend({
       corridor: normalized.corridor,
       sroa_output: sroa,
       dsm_output: dsm,
       max_options: 3,
     });
-    traceSentrixStep({ workflow: "agent-chat", step: "apo", status: "success" });
+    traceVarunaStep({ workflow: "agent-chat", step: "apo", status: "success" });
     const griaSummary = summarizeGria(griaMatches, normalized);
-    traceSentrixStep({ workflow: "agent-chat", step: "synthesize", status: "start" });
+    traceVarunaStep({ workflow: "agent-chat", step: "synthesize", status: "start" });
     const synthesized = await synthesizeFinal(question, normalized, griaSummary, dsm, sroa, apo);
     const final = synthesized?.trim() || fallbackFinal(normalized, griaSummary, dsm, sroa, apo);
-    traceSentrixStep({ workflow: "agent-chat", step: "synthesize", status: synthesized?.trim() ? "success" : "fallback" });
+    traceVarunaStep({ workflow: "agent-chat", step: "synthesize", status: synthesized?.trim() ? "success" : "fallback" });
 
     return {
       final,
@@ -592,7 +592,7 @@ export const formatAgentOutput = async (
       2
     ).slice(0, 30000),
     [
-      "You format raw agent output for the Sentrix dashboard.",
+      "You format raw agent output for the Varuna dashboard.",
       "Use the language model only for formatting and explanation; do not recalculate, reorder, invent, or alter values.",
       "Write a detailed, readable operator page for the selected agent, suitable for a full right-panel page.",
       "Use clear section headings: Snapshot, What the agent decided, Key numbers, Timeline or schedule, Data used, Interpretation, Caveats / next actions.",
@@ -820,7 +820,7 @@ export const answerAgentOutputQuestion = async (
       2
     ).slice(0, 32000),
     [
-      "You answer operator questions about one selected Sentrix agent output.",
+      "You answer operator questions about one selected Varuna agent output.",
       "Use ONLY the provided context. Do not run new calculations, invent missing data, or use outside knowledge.",
       "Give a detailed, operator-useful answer with clear headings and short bullets or short paragraphs.",
       "Aim for 180-350 words when the context supports it.",

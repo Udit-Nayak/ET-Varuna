@@ -6,7 +6,7 @@ import { PipelineInput, PipelineResult, NewsArticle, AnalysisResult, VectorDocum
 import { deleteById, findByCorridor, findByCountry, findById, findExistingVectorArticleIds, getHistory as getRiskHistory, getLatest as getLatestRisk, getNewsSources, getRecentVectorCandidates, replaceVectorDocumentsForArticle, updateNewsSourceFetchTime, upsertPipelineLogStatus, vectorSearch } from "./mongoRepository";
 import { getHighRiskCount } from "./analysisUtils";
 import { buildQueryEmbedding, vectorDocumentsFromArticle } from "./vectorizer";
-import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { invokeGroqChatWithLangChain, Varuna_GROQ_MODEL } from "../langchain/llm";
 import { extractJsonObject } from "../langchain/parser";
 
 const textSimilarity = (left: string, right: string): number => {
@@ -117,7 +117,7 @@ const langChainGroqRerank = async (query: string, documents: VectorDocument[], l
   if (documents.length === 0) return null;
 
   const result = await invokeGroqChatWithLangChain({
-    model: process.env.GRIA_RERANK_MODEL || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+    model: process.env.GRIA_RERANK_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
     maxOutputTokens: 450,
     temperature: 0.1,
     responseFormat: "json_object",

@@ -7,7 +7,7 @@ import {
   SroaPolicy,
   SroaSanityCheckResult,
 } from "./types";
-import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { invokeGroqChatWithLangChain, Varuna_GROQ_MODEL } from "../langchain/llm";
 
 interface SroaLlmFormatResponse {
   corridor?: string;
@@ -95,9 +95,9 @@ const invokeLlm = async (prompt: string): Promise<string | null> => {
   try {
     if (provider === "groq" || provider === "langchain-groq") {
       const result = await invokeGroqChatWithLangChain({
-        model: process.env.SROA_LLM_MODEL || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+        model: process.env.SROA_LLM_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
         systemInstruction: [
-          "You normalize or review SROA agent input/output for Sentrix.",
+          "You normalize or review SROA agent input/output for Varuna.",
           "Use the language model only for formatting, validation, and explanation.",
           "Never recalculate reserve releases or invent operational data.",
         ].join(" "),

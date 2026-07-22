@@ -58,7 +58,7 @@ const Landing = () => {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
-            <span className="font-display text-lg font-semibold tracking-tight">Sentrix</span>
+            <span className="font-display text-lg font-semibold tracking-tight">Varuna</span>
           </div>
           <Link
             to="/auth"
@@ -77,10 +77,10 @@ const Landing = () => {
             </span>
             <h1 className="font-display text-4xl font-semibold leading-[1.1] tracking-tight md:text-5xl">
               India-facing energy corridors need faster decisions.
-              <span className="text-amber"> Sentrix gives operators the signal.</span>
+              <span className="text-amber"> Varuna gives operators the signal.</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted">
-              Sentrix fuses news, vessel movement, reserve posture, and procurement logic so teams
+              Varuna fuses news, vessel movement, reserve posture, and procurement logic so teams
               can understand disruption early and respond before corridor risk becomes supply stress.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-4">

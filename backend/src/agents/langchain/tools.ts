@@ -8,7 +8,7 @@ import { getTfmLiveSnapshot } from "../tfm/service";
 type DynamicImport = <T = any>(specifier: string) => Promise<T>;
 const dynamicImport = new Function("specifier", "return import(specifier)") as DynamicImport;
 
-export const sentrixToolHandlers = {
+export const VarunaToolHandlers = {
   gria_retrieve: queryVectorKnowledge,
   dsm_simulate: runDsmSimulation,
   sroa_optimize: runSroaOptimization,
@@ -21,36 +21,36 @@ const toolDefinitions = [
   {
     name: "gria_retrieve",
     description: "Retrieve GRIA geopolitical/news intelligence from the existing MongoDB vector search.",
-    handler: sentrixToolHandlers.gria_retrieve,
+    handler: VarunaToolHandlers.gria_retrieve,
   },
   {
     name: "dsm_simulate",
     description: "Run the existing DSM disruption scenario simulation.",
-    handler: sentrixToolHandlers.dsm_simulate,
+    handler: VarunaToolHandlers.dsm_simulate,
   },
   {
     name: "sroa_optimize",
     description: "Run the existing SROA strategic reserve optimization.",
-    handler: sentrixToolHandlers.sroa_optimize,
+    handler: VarunaToolHandlers.sroa_optimize,
   },
   {
     name: "apo_recommend",
     description: "Run the existing APO alternate procurement ranking.",
-    handler: sentrixToolHandlers.apo_recommend,
+    handler: VarunaToolHandlers.apo_recommend,
   },
   {
     name: "tfm_snapshot",
     description: "Read the existing Supply Chain Digital Twin live snapshot.",
-    handler: sentrixToolHandlers.tfm_snapshot,
+    handler: VarunaToolHandlers.tfm_snapshot,
   },
   {
     name: "map_zone_analyze",
     description: "Run the existing map tension-zone workflow.",
-    handler: sentrixToolHandlers.map_zone_analyze,
+    handler: VarunaToolHandlers.map_zone_analyze,
   },
 ];
 
-export const getSentrixToolDefinitions = () => toolDefinitions.map(({ name, description }) => ({ name, description }));
+export const getVarunaToolDefinitions = () => toolDefinitions.map(({ name, description }) => ({ name, description }));
 
 export const getOptionalLangChainTools = async (): Promise<unknown[]> => {
   try {

@@ -1,5 +1,5 @@
 import { ChatMessageDocument } from "../../models/ChatSession";
-import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "./llm";
+import { invokeGroqChatWithLangChain, Varuna_GROQ_MODEL } from "./llm";
 
 export interface ChatMemorySummaryResult {
   summary: string | null;
@@ -7,7 +7,7 @@ export interface ChatMemorySummaryResult {
   generatedAt: string | null;
 }
 
-const enabled = (): boolean => process.env.SENTRIX_CHAT_MEMORY_SUMMARY_ENABLED !== "false";
+const enabled = (): boolean => process.env.Varuna_CHAT_MEMORY_SUMMARY_ENABLED !== "false";
 
 const deterministicSummary = (messages: ChatMessageDocument[]): string | null => {
   const userQuestions = messages
@@ -20,7 +20,7 @@ const deterministicSummary = (messages: ChatMessageDocument[]): string | null =>
 };
 
 export const summarizeChatMemory = async (messages: ChatMessageDocument[]): Promise<ChatMemorySummaryResult> => {
-  if (!enabled() || messages.length < Number(process.env.SENTRIX_CHAT_MEMORY_MIN_MESSAGES ?? 12)) {
+  if (!enabled() || messages.length < Number(process.env.Varuna_CHAT_MEMORY_MIN_MESSAGES ?? 12)) {
     return { summary: null, provider: "disabled", generatedAt: null };
   }
 
@@ -31,12 +31,12 @@ export const summarizeChatMemory = async (messages: ChatMessageDocument[]): Prom
     .slice(0, 16000);
 
   const result = await invokeGroqChatWithLangChain({
-    model: process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+    model: process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
     maxOutputTokens: 350,
     temperature: 0.1,
     traceName: "chat-memory-summary",
     systemInstruction: [
-      "Summarize Sentrix chat history for future context compression.",
+      "Summarize Varuna chat history for future context compression.",
       "Do not add new facts. Use only the transcript.",
       "Keep exact corridors, durations, agent outputs, reserve numbers, procurement route names, and unresolved operator questions when present.",
       "Return a compact paragraph plus any open follow-up question.",

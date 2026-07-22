@@ -1,5 +1,5 @@
 import { ApoCandidateScore, ApoInput, ApoLlmReasoning } from "./types";
-import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { invokeGroqChatWithLangChain, Varuna_GROQ_MODEL } from "../langchain/llm";
 
 const geminiModel = process.env.APO_GEMINI_MODEL ?? process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
 const hfModel = process.env.APO_LLM_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.3";
@@ -88,7 +88,7 @@ const callHuggingFace = async (prompt: string): Promise<string | null> => {
 const callConfiguredLlm = async (prompt: string): Promise<{ raw: string | null; usedProvider: string }> => {
   if (provider === "groq" || provider === "langchain-groq") {
     const result = await invokeGroqChatWithLangChain({
-      model: process.env.APO_LLM_MODEL || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL,
+      model: process.env.APO_LLM_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
       systemInstruction: [
         "You are APO, the Adaptive Procurement Orchestrator for an energy supply-chain dashboard.",
         "The deterministic engine has already calculated and ranked procurement options.",

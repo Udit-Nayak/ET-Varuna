@@ -1,6 +1,6 @@
 export const promptBlock = (parts: string[]): string => parts.filter(Boolean).join(" ");
 
-export const sentrixJsonInstruction = (shape: string): string =>
+export const VarunaJsonInstruction = (shape: string): string =>
   [
     "Return JSON only.",
     "Do not include markdown fences unless unavoidable.",

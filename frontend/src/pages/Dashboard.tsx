@@ -5,6 +5,7 @@ import TensionDrawer from "../components/TensionDrawer";
 import VesselMap, { ApoRouteMapOption, VesselMapHandle } from "../components/VesselMap";
 import AgentHero from "../components/workspace/AgentHero";
 import AgentShowcase from "../components/workspace/AgentShowcase";
+import HackathonCredits from "../components/workspace/HackathonCredits";
 import DissolveOverlay from "../components/workspace/DissolveOverlay";
 import SplitWorkspace from "../components/workspace/SplitWorkspace";
 import { corridorLabel, useAgentWorkflowChat } from "../hooks/useAgentWorkflowChat";
@@ -146,6 +147,15 @@ const Dashboard = () => {
     setIsEraseMode(false);
     chat.startNewChat();
   }, [chat, clearAllZones, setIsDrawing]);
+  const resetToDashboardHome = useCallback(() => {
+    setPhase("hero");
+    setShowcaseProgress(0);
+    setIsDrawing(false);
+    setIsEraseMode(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.setTimeout(requestMapResize, 120);
+  }, [requestMapResize, setPhase]);
+
 
   const handleLoadSession = useCallback(
     (sessionId: string) => {
@@ -223,7 +233,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-base text-ink">
-      <Navbar workspaceMode={isWorkspace} />
+      <Navbar workspaceMode={isWorkspace} onBrandClick={resetToDashboardHome} />
 
       <motion.div
         className={`fixed ${isWorkspace ? "z-20 pointer-events-auto" : "z-0 pointer-events-none"}`}
@@ -272,6 +282,7 @@ const Dashboard = () => {
           <DissolveOverlay key="story" onExitComplete={completeWorkspaceTransition}>
             <AgentHero onUseMe={startWorkspaceTransition} />
             <AgentShowcase onProgressChange={setShowcaseProgress} />
+            <HackathonCredits />
           </DissolveOverlay>
         )}
       </AnimatePresence>

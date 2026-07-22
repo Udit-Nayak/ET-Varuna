@@ -65,13 +65,13 @@ const Auth = () => {
           <div className="relative w-full max-w-md">
             <Link to="/" className="mb-10 inline-flex items-center gap-2">
               <span className="h-2 w-2 animate-pulseDot rounded-full bg-amber" />
-              <span className="font-display text-lg font-semibold tracking-tight">Sentrix</span>
+              <span className="font-display text-lg font-semibold tracking-tight">Varuna</span>
             </Link>
 
             <div className="mb-7">
               <span className="font-mono text-[11px] uppercase tracking-widest text-amber">Secure operator access</span>
               <h1 className="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight">
-                {mode === "login" ? "Welcome back to the control room." : "Create your Sentrix workspace."}
+                {mode === "login" ? "Welcome back to the control room." : "Create your Varuna workspace."}
               </h1>
               <p className="mt-4 text-sm leading-6 text-muted">
                 Sign in to monitor geopolitical risk signals, live vessel exposure, reserve posture,

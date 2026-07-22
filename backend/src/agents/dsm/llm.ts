@@ -9,7 +9,7 @@ import {
   DsmSimulationOutput,
   DsmWorkflowInput,
 } from "./types";
-import { invokeGroqChatWithLangChain, SENTRIX_GROQ_MODEL } from "../langchain/llm";
+import { invokeGroqChatWithLangChain, Varuna_GROQ_MODEL } from "../langchain/llm";
 
 const apiKey = process.env.DSM_API_KEY || process.env.DSM_LLM_API_KEY || process.env.OPENAI_API_KEY || "";
 const provider = process.env.DSM_LLM_PROVIDER ?? "openai";
@@ -31,7 +31,7 @@ const callLlm = async (system: string, user: string): Promise<string | null> => 
     const groqModel =
       process.env.DSM_LLM_MODEL && !process.env.DSM_LLM_MODEL.startsWith("gpt")
         ? process.env.DSM_LLM_MODEL
-        : process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL;
+        : process.env.GROQ_MODEL || Varuna_GROQ_MODEL;
     const result = await invokeGroqChatWithLangChain({
       model: groqModel,
       systemInstruction: system,

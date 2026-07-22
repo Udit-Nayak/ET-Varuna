@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import { showcaseAgents } from "./agentContent";
+import varunaWordmark from "../../assets/brand/varuna-wordmark.png";
 
 interface AgentHeroProps {
   onUseMe: () => void;
@@ -17,7 +18,7 @@ type GriaNewsItem = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const GRIA_NEWS_CACHE_KEY = "Sentrix-gria-hover-news";
+const GRIA_NEWS_CACHE_KEY = "Varuna-gria-hover-news";
 
 const formatRelativeTime = (value?: string) => {
   if (!value) return "";
@@ -48,10 +49,21 @@ const readCachedNews = (): GriaNewsItem[] => {
 const cacheNews = (items: GriaNewsItem[]) => {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(GRIA_NEWS_CACHE_KEY, JSON.stringify({ items, cachedAt: Date.now() }));
+    window.localStorage.setItem(GRIA_NEWS_CACHE_KEY, JSON.stringify({ items: items.slice(0, 5), cachedAt: Date.now() }));
   } catch {
     // Ignore storage failures.
   }
+};
+
+const mergeRollingNews = (current: GriaNewsItem[], incoming: GriaNewsItem[]) => {
+  const seen = new Set<string>();
+  const merged = [...incoming, ...current].filter((item) => {
+    const key = item.id || item.url || item.title;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return merged.slice(0, 5);
 };
 
 const GriaHoverNews = () => {
@@ -59,8 +71,6 @@ const GriaHoverNews = () => {
   const [status, setStatus] = useState<"idle" | "fetching" | "live" | "cached" | "error">(
     items.length > 0 ? "cached" : "idle"
   );
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     let alive = true;
     const controller = new AbortController();
@@ -91,10 +101,14 @@ const GriaHoverNews = () => {
 
         if (!alive) return;
         if (nextItems.length > 0) {
-          setItems(nextItems);
-          cacheNews(nextItems);
+          setItems((current) => {
+            const merged = mergeRollingNews(current, nextItems);
+            cacheNews(merged);
+            return merged;
+          });
           setStatus("live");
         } else {
+          setItems((current) => current.slice(0, 5));
           setStatus("cached");
         }
       } catch {
@@ -116,63 +130,6 @@ const GriaHoverNews = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node || items.length === 0) return;
-
-    let rafId = 0;
-    let lastTs = 0;
-    let paused = false;
-    const speedPxPerSecond = 42;
-
-    const tick = (timestamp: number) => {
-      if (!node.isConnected) return;
-
-      if (paused) {
-        lastTs = 0;
-        rafId = window.requestAnimationFrame(tick);
-        return;
-      }
-
-      if (lastTs === 0) lastTs = timestamp;
-      const delta = timestamp - lastTs;
-      lastTs = timestamp;
-
-      const maxScrollTop = node.scrollHeight - node.clientHeight;
-      if (maxScrollTop <= 0) {
-        rafId = window.requestAnimationFrame(tick);
-        return;
-      }
-
-      node.scrollTop += (speedPxPerSecond * delta) / 1000;
-
-      if (node.scrollTop >= maxScrollTop - 1) {
-        node.scrollTop = 0;
-      }
-
-      rafId = window.requestAnimationFrame(tick);
-    };
-
-    const handlePointerEnter = () => {
-      paused = true;
-    };
-
-    const handlePointerLeave = () => {
-      paused = false;
-      lastTs = 0;
-    };
-
-    node.addEventListener("mouseenter", handlePointerEnter);
-    node.addEventListener("mouseleave", handlePointerLeave);
-    rafId = window.requestAnimationFrame(tick);
-
-    return () => {
-      window.cancelAnimationFrame(rafId);
-      node.removeEventListener("mouseenter", handlePointerEnter);
-      node.removeEventListener("mouseleave", handlePointerLeave);
-    };
-  }, [items.length]);
-
   return (
     <motion.div
       initial={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -191,16 +148,16 @@ const GriaHoverNews = () => {
           {items.length} items
         </div>
       </div>
-      <div ref={scrollRef} className="gria-scrollbar-hide max-h-64 overflow-y-auto px-3 py-2">
-        <div className="space-y-2">
+      <div className="gria-scrollbar-hide h-64 overflow-hidden px-3 py-2">
+        <div className={items.length > 0 ? "gria-news-track space-y-2" : "space-y-2"}>
           {items.length === 0 ? (
             <div className="rounded border border-dashed border-border bg-base/40 px-3 py-4 text-xs text-muted">
               No cached stories yet. GRIA will show recent news here after the next fetch.
             </div>
           ) : (
-            items.map((item, index) => (
+            [...items, ...items].map((item, index) => (
               <a
-                key={item.id}
+                key={`${item.id}-${index}`}
                 href={item.url || "#"}
                 target={item.url ? "_blank" : undefined}
                 rel={item.url ? "noreferrer" : undefined}
@@ -211,7 +168,7 @@ const GriaHoverNews = () => {
                     <div className="overflow-hidden text-ellipsis text-sm font-medium text-ink">{item.title}</div>
                     <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-wider text-muted">
                       <span>{item.source ?? "GRIA source"}</span>
-                      <span>{formatRelativeTime(item.publishedAt) || `#${index + 1}`}</span>
+                      <span>{formatRelativeTime(item.publishedAt) || `#${(index % items.length) + 1}`}</span>
                     </div>
                   </div>
                   <span className="mt-0.5 rounded border border-amber/30 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-amber">
@@ -258,22 +215,27 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
         </motion.span>
         <motion.h1
           variants={item}
-          className="mt-5 max-w-4xl font-display text-4xl font-semibold leading-tight tracking-tight text-ink md:text-6xl"
+          className="mt-5 flex w-full justify-center"
         >
-          Sentrix coordinates live risk signals into decisive energy supply action.
+          <img
+            src={varunaWordmark}
+            alt="Varuna"
+            className="h-auto w-[min(72vw,44rem)] drop-shadow-[0_18px_30px_rgba(0,0,0,0.72)]"
+          />
         </motion.h1>
-        <motion.p
+        <motion.h6
           variants={item}
-          className="shiny-gradient-text mt-5 max-w-2xl text-sm font-semibold leading-relaxed md:text-base"
+          className="mt-5 max-w-4xl font-body text-2xl font-medium leading-tight text-ink/85 drop-shadow-[0_2px_18px_rgba(0,0,0,0.85)] md:text-3xl"
         >
-          Monitor corridors, query the agent workflow, and move from geopolitical signal to operational response in one focused workspace.
-        </motion.p>
+          From risk signal to executable action in real time
+        </motion.h6>
+        
 
         <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {showcaseAgents.map((agent) => (
             <div
               key={agent.code}
-              className="hero-agent-card group relative flex min-h-[6.25rem] items-start gap-3 rounded-md border border-border/80 px-4 py-3.5 text-left shadow-lg shadow-base/45 backdrop-blur-md transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-[#121924]/88 hover:shadow-2xl hover:shadow-amber/10"
+              className="hero-agent-card group relative flex min-h-[4.5rem] items-start gap-3 rounded-md border border-border/80 px-4 py-3.5 text-left shadow-lg shadow-base/45 backdrop-blur-md transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-[#121924]/88 hover:shadow-2xl hover:shadow-amber/10"
             >
               <span className="mt-0.5 shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
                 {agent.code}
@@ -281,9 +243,6 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
               <div className="min-w-0 flex-1">
                 <div className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors duration-200 group-hover:text-white">
                   {agent.name}
-                </div>
-                <div className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted transition-colors duration-200 group-hover:text-ink/80">
-                  {agent.desc}
                 </div>
               </div>
             </div>

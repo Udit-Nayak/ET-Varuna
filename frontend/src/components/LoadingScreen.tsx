@@ -62,7 +62,7 @@ export default function LoadingScreen({
       }}
       role="status"
       aria-live="polite"
-      aria-label="Loading Sentrix"
+      aria-label="Loading Varuna"
     >
       <style>{`
         @keyframes aegisOrbit1 { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -94,9 +94,9 @@ export default function LoadingScreen({
         height="160"
         viewBox="0 0 120 120"
         role="img"
-        aria-label="Sentrix animated orbit logo with warship markers"
+        aria-label="Varuna animated orbit logo with warship markers"
       >
-        <title>Sentrix logo mark</title>
+        <title>Varuna logo mark</title>
         <circle cx="60" cy="60" r="52" fill="none" stroke="#ef9f27" strokeWidth="1" opacity="0.25" />
         <circle cx="60" cy="60" r="36" fill="none" stroke="#ef9f27" strokeWidth="1" opacity="0.35" />
 
@@ -126,10 +126,7 @@ export default function LoadingScreen({
 
       <div className="aegis-wordmark" style={{ textAlign: "center" }}>
         <div style={{ color: "#fff", fontSize: 20, fontWeight: 500, letterSpacing: 3 }}>
-          Sentrix
-        </div>
-        <div style={{ color: "#ef9f27", fontSize: 11, letterSpacing: 5, marginTop: 2 }}>
-          INTEL
+          Varuna
         </div>
         <div style={{ color: "#6b7280", fontSize: 11, letterSpacing: 2, marginTop: 10 }}>
           LOADING

@@ -27,7 +27,7 @@ export interface ChatSessionSummary {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const ACTIVE_CHAT_STORAGE_KEY = "sentrix.activeChatSession";
+const ACTIVE_CHAT_STORAGE_KEY = "Varuna.activeChatSession";
 const NEW_CHAT_MARKER = "__new__";
 
 const getStoredActiveChat = () => {

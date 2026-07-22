@@ -79,7 +79,7 @@ export async function fetchLivePriceFromPPAC(): Promise<PPACLivePrice> {
   try {
     const response = await axios.get<string>(PPAC_CRUDE_PRICE_URL, {
       timeout: 20_000,
-      headers: { "User-Agent": "ET-Sentrix live-price scraper/1.0" },
+      headers: { "User-Agent": "ET-Varuna live-price scraper/1.0" },
     });
     const $ = cheerio.load(response.data);
     const pageText = normaliseText($.root().text());

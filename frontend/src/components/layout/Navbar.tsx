@@ -32,9 +32,10 @@ const getInitials = (displayName?: string | null, email?: string | null) => {
 
 interface NavbarProps {
   workspaceMode?: boolean;
+  onBrandClick?: () => void;
 }
 
-const Navbar = ({ workspaceMode = true }: NavbarProps) => {
+const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
   const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -153,14 +154,18 @@ const Navbar = ({ workspaceMode = true }: NavbarProps) => {
           boxShadow: shouldFloat ? "0 18px 48px rgba(0,0,0,0.38)" : "0 0 0 rgba(0,0,0,0)",
         }}
         transition={{ duration: 0.26, ease: "easeOut" }}
-        className="mx-auto grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4 overflow-hidden border px-5 sm:px-6"
+        className="mx-auto grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4 overflow-visible border px-5 sm:px-6"
       >
-        <Link to="/dashboard" className="group flex items-center gap-2">
+        <Link
+          to="/dashboard"
+          onClick={() => onBrandClick?.()}
+          className="group flex items-center gap-2"
+        >
           <span className="relative flex h-4 w-4 items-center justify-center">
             <span className="absolute h-2.5 w-2.5 animate-pulseDot rounded-full bg-amber" />
             <span className="h-1.5 w-1.5 rounded-full bg-ink transition-colors group-hover:bg-amber" />
           </span>
-          <span className="font-display text-xl font-semibold tracking-tight text-ink">Sentrix</span>
+          <span className="font-display text-xl font-semibold tracking-tight text-ink">Varuna</span>
         </Link>
 
         <nav className="hidden min-w-0 justify-center md:flex" aria-label="Agent showcase navigation">
@@ -183,11 +188,7 @@ const Navbar = ({ workspaceMode = true }: NavbarProps) => {
           <button
             type="button"
             onClick={() => setChatOpen((value) => !value)}
-<<<<<<< Updated upstream
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-amber/50 bg-surface text-[11px] font-semibold text-amber shadow-sm shadow-base/30 transition-colors hover:bg-amber hover:text-base"
-=======
             className="flex h-9 w-9 items-center justify-center text-amber transition-colors hover:text-amber/80"
->>>>>>> Stashed changes
             aria-label="AI bot"
             title="AI bot"
           >
@@ -213,7 +214,7 @@ const Navbar = ({ workspaceMode = true }: NavbarProps) => {
               {profile?.photoURL ? <img src={profile.photoURL} alt="" className="h-full w-full object-cover" /> : initials}
             </button>
             {open && (
-              <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
+              <div className="absolute right-0 z-[80] mt-2 w-56 overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
                 <div className="border-b border-border px-3 py-2">
                   <div className="truncate text-ink">{displayName}</div>
                   <div className="truncate text-[11px]">{email}</div>

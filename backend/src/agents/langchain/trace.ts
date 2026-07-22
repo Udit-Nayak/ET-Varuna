@@ -1,4 +1,4 @@
-export interface SentrixTraceMeta {
+export interface VarunaTraceMeta {
   workflow?: string;
   step?: string;
   status?: "start" | "success" | "fallback" | "error";
@@ -6,25 +6,25 @@ export interface SentrixTraceMeta {
 }
 
 const tracingEnabled = (): boolean =>
-  process.env.SENTRIX_LANGCHAIN_TRACE === "true" || process.env.LANGSMITH_TRACING === "true";
+  process.env.Varuna_LANGCHAIN_TRACE === "true" || process.env.LANGSMITH_TRACING === "true";
 
-export const traceSentrixStep = (meta: SentrixTraceMeta): void => {
+export const traceVarunaStep = (meta: VarunaTraceMeta): void => {
   if (!tracingEnabled()) return;
-  console.log("[Sentrix LangChain trace]", {
+  console.log("[Varuna LangChain trace]", {
     at: new Date().toISOString(),
     ...meta,
   });
 };
 
-export const traceDuration = async <T>(meta: Omit<SentrixTraceMeta, "status" | "details">, work: () => Promise<T>): Promise<T> => {
+export const traceDuration = async <T>(meta: Omit<VarunaTraceMeta, "status" | "details">, work: () => Promise<T>): Promise<T> => {
   const startedAt = Date.now();
-  traceSentrixStep({ ...meta, status: "start" });
+  traceVarunaStep({ ...meta, status: "start" });
   try {
     const result = await work();
-    traceSentrixStep({ ...meta, status: "success", details: { durationMs: Date.now() - startedAt } });
+    traceVarunaStep({ ...meta, status: "success", details: { durationMs: Date.now() - startedAt } });
     return result;
   } catch (error) {
-    traceSentrixStep({
+    traceVarunaStep({
       ...meta,
       status: "error",
       details: { durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error) },

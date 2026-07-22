@@ -105,7 +105,44 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.92);
-  animation: sentrix-shine 4.8s linear infinite;
+  animation: Varuna-shine 4.8s linear infinite;
+}
+
+
+.varuna-devanagari-title {
+  position: relative;
+  display: inline-block;
+  padding: 0 0.08em 0.06em;
+  font-family: "Cinzel Decorative", "Noto Serif Devanagari", "Devanagari Sangam MN", "Kohinoor Devanagari", Georgia, serif;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+  transform: scaleX(1.08);
+  text-shadow: 0 12px 24px rgba(0, 0, 0, 0.72), 0 0 34px rgba(232, 163, 61, 0.22);
+}
+
+.varuna-devanagari-title::before {
+  content: "";
+  position: absolute;
+  left: -0.08em;
+  right: -0.08em;
+  top: 0.14em;
+  height: 0.055em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, rgba(232, 163, 61, 0.9) 10%, rgba(246, 251, 255, 0.86) 50%, rgba(232, 163, 61, 0.9) 90%, transparent 100%);
+  box-shadow: 0 0 18px rgba(232, 163, 61, 0.32);
+  pointer-events: none;
+}
+
+.varuna-devanagari-title::after {
+  content: "";
+  position: absolute;
+  left: 0.5em;
+  right: 0.5em;
+  bottom: -0.02em;
+  height: 0.04em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(232, 163, 61, 0.58), transparent);
+  pointer-events: none;
 }
 
 .hero-agent-card {
@@ -132,14 +169,33 @@ body {
 
 .hero-agent-card:hover::before {
   opacity: 1;
-  animation: sentrix-shine 2.8s linear infinite;
+  animation: Varuna-shine 2.8s linear infinite;
 }
 
-@keyframes sentrix-shine {
+@keyframes Varuna-shine {
   0% {
     background-position: 220% 50%;
   }
   100% {
     background-position: -20% 50%;
+  }
+}
+
+
+.gria-news-track {
+  animation: gria-news-scroll 22s linear infinite;
+  will-change: transform;
+}
+
+.gria-news-track:hover {
+  animation-play-state: running;
+}
+
+@keyframes gria-news-scroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
   }
 }

@@ -524,7 +524,7 @@ const LiveMap = () => {
       <header className="border-b border-border bg-base/90 px-6 py-4 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="font-display text-lg font-semibold tracking-tight">Sentrix - Live Map</span>
+            <span className="font-display text-lg font-semibold tracking-tight">Varuna - Live Map</span>
             <span className={`inline-flex items-center gap-2 rounded border px-2 py-1 font-mono text-[10px] font-semibold ${statusPill.cls}`}>
               <span className={`h-2 w-2 rounded-full ${status === "live" ? "animate-pulseDot" : ""}`} style={{ background: "currentColor" }} />
               {statusPill.label}

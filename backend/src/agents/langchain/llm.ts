@@ -2,7 +2,7 @@ type DynamicImport = <T = any>(specifier: string) => Promise<T>;
 
 const dynamicImport = new Function("specifier", "return import(specifier)") as DynamicImport;
 
-export const SENTRIX_GROQ_MODEL = "llama-3.1-8b-instant";
+export const Varuna_GROQ_MODEL = "llama-3.1-8b-instant";
 
 export interface LangChainGroqChatOptions {
   prompt: string;
@@ -48,7 +48,7 @@ export const invokeGroqChatWithLangChain = async (
     const imported = await dynamicImport<{ ChatGroq?: new (args: Record<string, unknown>) => any }>("@langchain/groq");
     if (!imported.ChatGroq) return null;
 
-    const modelName = options.model || process.env.GROQ_MODEL || SENTRIX_GROQ_MODEL;
+    const modelName = options.model || process.env.GROQ_MODEL || Varuna_GROQ_MODEL;
     const llm = new imported.ChatGroq({
       apiKey: process.env.GROQ_API_KEY,
       model: modelName,

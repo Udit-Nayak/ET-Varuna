@@ -4,7 +4,7 @@ interface AgentShowcaseCardProps {
   agent: {
     code: string;
     name: string;
-    desc: string;
+    desc?: string;
     longDesc: string;
   };
   index: number;
@@ -35,7 +35,7 @@ const AgentShowcaseCard = ({ agent, index, progress }: AgentShowcaseCardProps) =
       </div>
       <h3 className="max-w-xl font-display text-3xl font-semibold leading-tight tracking-tight text-ink md:text-4xl">{agent.name}</h3>
       <p className="mt-5 max-w-2xl text-base leading-7 text-muted transition-colors duration-200 group-hover:text-ink/80">
-        {agent.desc}
+        {agent.desc ?? agent.longDesc}
       </p>
       <div className="mt-10 h-1 w-28 rounded-full bg-amber transition-all duration-200 group-hover:w-40" />
     </motion.div>
