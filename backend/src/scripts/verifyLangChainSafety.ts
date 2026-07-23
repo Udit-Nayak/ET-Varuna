@@ -29,7 +29,7 @@ const assert = (condition: unknown, message: string): void => {
 };
 
 const run = async (): Promise<void> => {
-  process.env.LANGCHAIN_ENABLED = "false";
+  process.env.AIS_SIMULATION_ENABLED = "false";
   process.env.Varuna_CHAT_MEMORY_SUMMARY_ENABLED = "true";
   process.env.Varuna_CHAT_MEMORY_MIN_MESSAGES = "2";
 

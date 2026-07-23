@@ -27,10 +27,10 @@ interface SroaLlmReviewResponse {
   notes?: string[];
 }
 
-const provider = process.env.SROA_LLM_PROVIDER ?? process.env.DSM_LLM_PROVIDER ?? "huggingface";
-const model = process.env.SROA_LLM_MODEL ?? process.env.DSM_LLM_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.3";
+const provider = process.env.DSM_LLM_PROVIDER ?? process.env.DSM_LLM_PROVIDER ?? "huggingface";
+const model = process.env.DSM_LLM_MODEL ?? process.env.DSM_LLM_MODEL ?? "mistralai/Mistral-7B-Instruct-v0.3";
 
-const llmEnabled = (): boolean => process.env.SROA_LLM_ENABLED !== "false";
+const llmEnabled = (): boolean => process.env.AIS_SIMULATION_ENABLED !== "false";
 
 const parseNumber = (value: unknown): number | undefined => {
   const parsed = Number(value);
@@ -95,7 +95,7 @@ const invokeLlm = async (prompt: string): Promise<string | null> => {
   try {
     if (provider === "groq" || provider === "langchain-groq") {
       const result = await invokeGroqChatWithLangChain({
-        model: process.env.SROA_LLM_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
+        model: process.env.DSM_LLM_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
         systemInstruction: [
           "You normalize or review SROA agent input/output for Varuna.",
           "Use the language model only for formatting, validation, and explanation.",

@@ -365,7 +365,7 @@ GROQ_MODEL=llama-3.1-8b-instant
 HF_TOKEN=your_huggingface_token
 NEWSAPI_KEY=your_newsapi_key
 AISSTREAM_API_KEY=your_aisstream_api_key
-AISSTREAM_ENABLED=true
+AISSTREAM_ENABLED=11
 
 # Firebase Admin values are required for token verification routes.
 FIREBASE_PROJECT_ID=your_project_id

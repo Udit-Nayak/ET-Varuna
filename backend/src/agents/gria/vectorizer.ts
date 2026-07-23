@@ -33,7 +33,7 @@ const normalizeVector = (vector: number[], dimensions = VECTOR_DIMENSIONS): numb
 };
 
 const geminiEmbedding = async (text: string, taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[] | null> => {
-  if (process.env.GRIA_EMBEDDING_PROVIDER !== "gemini" || !process.env.GEMINI_API_KEY) return null;
+  if (process.env.GRIA_RERANK_PROVIDER !== "gemini" || !process.env.GEMINI_API_KEY) return null;
 
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_EMBEDDING_MODEL}:embedContent`, {

@@ -117,7 +117,7 @@ const langChainGroqRerank = async (query: string, documents: VectorDocument[], l
   if (documents.length === 0) return null;
 
   const result = await invokeGroqChatWithLangChain({
-    model: process.env.GRIA_RERANK_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
+    model: process.env.GROQ_MODEL || process.env.GROQ_MODEL || Varuna_GROQ_MODEL,
     maxOutputTokens: 450,
     temperature: 0.1,
     responseFormat: "json_object",

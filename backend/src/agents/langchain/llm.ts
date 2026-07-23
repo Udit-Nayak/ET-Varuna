@@ -22,7 +22,7 @@ export interface LangChainGroqChatResult {
   model: string;
 }
 
-const langChainEnabled = (): boolean => process.env.LANGCHAIN_ENABLED !== "false";
+const langChainEnabled = (): boolean => process.env.AIS_SIMULATION_ENABLED !== "false";
 
 const extractMessageText = (content: unknown): string => {
   if (typeof content === "string") return content.trim();
@@ -55,7 +55,7 @@ export const invokeGroqChatWithLangChain = async (
       temperature: options.temperature ?? 0.25,
       maxTokens: options.maxOutputTokens,
       maxRetries: options.maxRetries ?? 1,
-      timeout: options.timeoutMs ?? Number(process.env.LANGCHAIN_GROQ_TIMEOUT_MS ?? 30000),
+      timeout: options.timeoutMs ?? Number(process.env.GROQ_TIMEOUT_MS ?? 30000),
     });
 
     const callOptions = options.responseFormat ? { response_format: { type: options.responseFormat } } : undefined;
@@ -69,7 +69,7 @@ export const invokeGroqChatWithLangChain = async (
     const text = extractMessageText(message?.content);
     return text ? { text, provider: "langchain-groq", model: modelName } : null;
   } catch (error) {
-    if (process.env.LANGCHAIN_DEBUG === "true") {
+    if (process.env.AIS_SIMULATION_ENABLED === "true") {
       console.warn(
         "[LangChain] Groq wrapper unavailable, falling back:",
         error instanceof Error ? error.message : error

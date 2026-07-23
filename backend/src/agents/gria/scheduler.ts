@@ -1,7 +1,7 @@
 import { runPipeline } from "./service";
 
 const SCHEDULE_MS = Math.max(5, Number(process.env.GRIA_NEWS_CRON_MINUTES ?? 35)) * 60 * 1000;
-const REFRESH_ON_STARTUP = process.env.GRIA_REFRESH_ON_STARTUP !== "false";
+const REFRESH_ON_STARTUP = process.env.AIS_SIMULATION_ENABLED !== "false";
 
 let schedulerInstance: NodeJS.Timeout | null = null;
 let running = false;
