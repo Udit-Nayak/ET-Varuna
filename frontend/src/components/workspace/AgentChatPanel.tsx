@@ -29,6 +29,7 @@ interface AgentChatPanelProps {
   onSetTension: (id: string, pct: number) => void;
   onSetDuration: (id: string, days: number) => void;
   onRemoveZone: (id: string) => void;
+  stackedLayout?: boolean;
 }
 
 const formatBpd = (value: number) =>
@@ -264,9 +265,9 @@ const TfmSection = ({ title, children }: { title: string; children: React.ReactN
 );
 
 const TfmKeyValue = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex min-w-0 items-center justify-between gap-3 rounded border border-border/70 bg-surface/70 px-3 py-2 font-mono text-xs">
+  <div className="flex min-w-0 flex-col gap-1 rounded border border-border/70 bg-surface/70 px-3 py-2 font-mono text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-3">
     <span className="min-w-0 break-words text-muted">{label}</span>
-    <span className="shrink-0 text-right text-ink">{value}</span>
+    <span className="min-w-0 break-words text-left text-ink sm:shrink-0 sm:text-right">{value}</span>
   </div>
 );
 
@@ -343,8 +344,8 @@ const AgentContextChat = ({
 
   return (
     <div className={(compact ? "p-3" : "p-4") + " border-t border-border bg-base/85"}>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div>
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="min-w-0">
           <div className="font-mono text-[10px] uppercase tracking-wider text-muted">Ask {agentMeta[agent].label}</div>
           <div className="text-xs text-muted">Answers use the current {agentMeta[agent].label} output as context.</div>
         </div>
@@ -352,7 +353,7 @@ const AgentContextChat = ({
           <button
             type="button"
             onClick={() => setMessages([])}
-            className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted hover:border-amber hover:text-amber"
+            className="w-fit rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted hover:border-amber hover:text-amber"
           >
             Clear
           </button>
@@ -362,7 +363,7 @@ const AgentContextChat = ({
       {messages.length > 0 && (
         <div ref={messageListRef} className="scrollbar-hide mb-3 max-h-44 space-y-2 overflow-y-auto rounded border border-border bg-surface/60 p-2">
           {messages.map((message) => (
-            <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[92%] rounded border border-amber/40 bg-amber/10 p-2 text-sm text-ink" : "max-w-[96%] rounded border border-border bg-base/80 p-2 text-sm leading-6 text-ink/90"}>
+            <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[94%] break-words rounded border border-amber/40 bg-amber/10 p-2 text-sm text-ink" : "max-w-[98%] break-words rounded border border-border bg-base/80 p-2 text-sm leading-6 text-ink/90"}>
               <div className="mb-1 font-mono text-[9px] uppercase tracking-wider text-muted">
                 {message.role === "user" ? "You" : message.usedLlm ? "LLM answer" : "Detailed fallback"}
               </div>
@@ -481,7 +482,7 @@ const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null;
             <h3 className="mt-2 font-display text-xl font-semibold tracking-tight">{meta.desc}</h3>
             <p className="mt-1 font-mono text-[11px] text-muted">Corridor: {workflow?.corridor ?? workflow?.normalized?.corridor ?? "latest workflow"}</p>
           </div>
-          <div className="rounded border border-border bg-surface px-3 py-2 font-mono text-[10px] text-muted">
+          <div className="shrink-0 rounded border border-border bg-surface px-3 py-2 font-mono text-[10px] text-muted">
             {isFormatting ? "Formatting with LLM..." : error ? "Detailed fallback shown" : usedGemini ? "LLM formatted" : "Detailed fallback shown"}
           </div>
         </div>
@@ -489,8 +490,8 @@ const AgentOutputView = ({ agent, workflow, compact }: { agent: AgentTab | null;
 
       <div className={`${compact ? "p-3" : "p-5"} scrollbar-hide min-h-0 flex-1 overflow-y-auto`}>
         {error && <div className="mb-3 rounded border border-risk/60 bg-risk/10 p-3 font-mono text-xs text-risk">{error}</div>}
-        <article className="rounded-md border border-border bg-base/70 p-4 shadow-inner shadow-base/30">
-          <div className="whitespace-pre-wrap text-sm leading-7 text-ink/90">{formatted || localSummary(agent, workflow)}</div>
+        <article className="rounded-md border border-border bg-base/70 p-3 shadow-inner shadow-base/30 sm:p-4">
+          <div className="break-words whitespace-pre-wrap text-sm leading-7 text-ink/90">{formatted || localSummary(agent, workflow)}</div>
         </article>
       </div>
       <AgentContextChat
@@ -526,6 +527,7 @@ const AgentChatPanel = ({
   onSetTension,
   onSetDuration,
   onRemoveZone,
+  stackedLayout = false,
 }: AgentChatPanelProps) => {
   const [query, setQuery] = useState("");
   const [activeAgent, setActiveAgent] = useState<AgentTab | null>(null);
@@ -542,10 +544,14 @@ const AgentChatPanel = ({
   };
 
   return (
-    <aside className="pointer-events-auto flex h-full min-w-0 flex-col border-l border-border bg-surface/95 text-ink shadow-2xl shadow-base/40 backdrop-blur">
+    <aside
+      className={`pointer-events-auto flex h-full min-w-0 flex-col bg-surface/95 text-ink shadow-2xl shadow-base/40 backdrop-blur ${
+        stackedLayout ? "rounded-t-xl border-t border-border" : "border-l border-border"
+      }`}
+    >
       <div className={`${compact ? "px-3 py-3" : "px-5 py-4"} border-b border-border`}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className={`flex gap-3 ${compact ? "flex-col" : "items-start justify-between"}`}>
+          <div className="min-w-0">
             <div className="font-mono text-[10px] uppercase tracking-widest text-amber">Agent Workflow</div>
             <h2 className="mt-1 font-display text-lg font-semibold tracking-tight">{activeAgent ? "Agent output" : "Live response chat"}</h2>
             {!activeAgent && (
@@ -554,13 +560,13 @@ const AgentChatPanel = ({
               </div>
             )}
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:justify-end sm:overflow-visible sm:pb-0">
             {(Object.keys(agentMeta) as AgentTab[]).map((agent) => (
               <button
                 key={agent}
                 type="button"
                 onClick={() => setActiveAgent(agent)}
-                className={`rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${activeAgent === agent ? agentMeta[agent].color : "border-border text-muted hover:border-amber hover:text-amber"}`}
+                className={`shrink-0 rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${activeAgent === agent ? agentMeta[agent].color : "border-border text-muted hover:border-amber hover:text-amber"}`}
               >
                 {agentMeta[agent].label}
               </button>
@@ -570,7 +576,7 @@ const AgentChatPanel = ({
               onClick={onToggleHistory}
               title={historyOpen ? "Close chat history" : "Open chat history"}
               aria-label={historyOpen ? "Close chat history" : "Open chat history"}
-              className={`flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
                 historyOpen ? "border-amber bg-amber/10 text-amber" : "border-border bg-base/70 text-muted hover:border-amber hover:text-amber"
               }`}
             >
@@ -585,23 +591,23 @@ const AgentChatPanel = ({
                   onClear();
                 }
               }}
-              className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
+              className="shrink-0 rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:border-amber hover:text-amber"
             >
               {activeAgent ? "Chat" : "Clear"}
             </button>
           </div>
         </div>
         {!activeAgent && (
-          <div className={`mt-3 grid ${compact ? "grid-cols-1" : "grid-cols-3"} gap-2 font-mono text-[10px] text-muted`}>
-            <div className="rounded border border-border bg-base/60 p-2">
+          <div className={`mt-3 grid ${compact ? "grid-cols-3" : "grid-cols-3"} gap-2 font-mono text-[10px] text-muted`}>
+            <div className="min-w-0 rounded border border-border bg-base/60 p-2">
               <div>Zones</div>
               <div className="text-sm font-semibold text-ink">{zones.length}</div>
             </div>
-            <div className="rounded border border-border bg-base/60 p-2">
+            <div className="min-w-0 rounded border border-border bg-base/60 p-2">
               <div>At risk</div>
-              <div className="text-sm font-semibold text-amber">{formatBpd(impact.totalVolumeAtRisk)}</div>
+              <div className="break-words text-sm font-semibold text-amber">{formatBpd(impact.totalVolumeAtRisk)}</div>
             </div>
-            <div className="rounded border border-border bg-base/60 p-2">
+            <div className="min-w-0 rounded border border-border bg-base/60 p-2">
               <div>SPR days</div>
               <div className="text-sm font-semibold text-safe">{impact.minSprDaysRemaining.toFixed(1)}</div>
             </div>
@@ -629,13 +635,13 @@ const AgentChatPanel = ({
           )}
           <div className="min-w-0 flex flex-1 flex-col">
           {zones.length > 0 && (
-            <div className={`${compact ? "px-3 py-3" : "px-5 py-4"} scrollbar-hide max-h-56 overflow-y-auto border-b border-border bg-base/35`}>
+            <div className={`${compact ? "px-3 py-3" : "px-5 py-4"} scrollbar-hide max-h-40 overflow-y-auto border-b border-border bg-base/35 sm:max-h-56`}>
               <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted">Active tension zones</div>
               <div className="space-y-2">
                 {zones.map((zone) => (
                   <div key={zone.id} className="rounded border border-border bg-surface/80 p-2 font-mono text-[11px] text-muted">
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="font-semibold text-ink">{zone.name}</span>
+                      <span className="min-w-0 break-words font-semibold text-ink">{zone.name}</span>
                       <button type="button" className="text-risk hover:text-ink" onClick={() => onRemoveZone(zone.id)}>
                         Delete
                       </button>
@@ -697,7 +703,7 @@ const AgentChatPanel = ({
               </div>
             </div>
 
-          <form onSubmit={handleSubmit} className={`${compact ? "p-3" : "p-4"} border-t border-border bg-base/80`}>
+          <form onSubmit={handleSubmit} className={`${compact ? "p-3" : "p-4"} border-t border-border bg-base/80 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
             <div className={`flex ${compact ? "flex-col" : "flex-row"} gap-2`}>
               <input
                 value={query}

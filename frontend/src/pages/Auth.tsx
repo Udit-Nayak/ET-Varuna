@@ -60,7 +60,7 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-base text-ink">
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,0.95fr)_minmax(560px,1.05fr)]">
-        <section className="relative flex items-center justify-center overflow-hidden border-b border-border bg-grid px-6 py-10 lg:border-b-0 lg:border-r">
+        <section className="relative flex min-h-screen items-center justify-center overflow-hidden border-b border-border bg-grid px-4 py-8 sm:px-6 sm:py-10 lg:border-b-0 lg:border-r">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(232,163,61,0.12),transparent_34%),linear-gradient(180deg,rgba(11,15,20,0.1),#0b0f14_78%)]" />
           <div className="relative w-full max-w-md">
             <Link to="/" className="mb-10 inline-flex items-center gap-2">
@@ -70,7 +70,7 @@ const Auth = () => {
 
             <div className="mb-7">
               <span className="font-mono text-[11px] uppercase tracking-widest text-amber">Secure operator access</span>
-              <h1 className="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight">
+              <h1 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
                 {mode === "login" ? "Welcome back to the control room." : "Create your Varuna workspace."}
               </h1>
               <p className="mt-4 text-sm leading-6 text-muted">
@@ -124,7 +124,7 @@ const Auth = () => {
               <div className="h-px flex-1 bg-border" />
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4 pb-[max(0rem,env(safe-area-inset-bottom))]">
               {mode === "signup" && (
                 <Field label="Full name" htmlFor="name">
                   <input

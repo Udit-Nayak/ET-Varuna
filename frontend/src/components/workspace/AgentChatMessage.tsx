@@ -32,13 +32,13 @@ const AgentChatMessage = ({ message, compact }: AgentChatMessageProps) => {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`${compact ? "max-w-[92%] p-2.5 text-xs" : isUser ? "max-w-[72%] p-3 text-sm" : "max-w-[92%] p-3 text-sm"} rounded-md border ${statusClass} text-muted`}
+        className={`${compact ? "max-w-[94%] p-2.5 text-xs" : isUser ? "max-w-[72%] p-3 text-sm" : "max-w-[92%] p-3 text-sm"} min-w-0 rounded-md border ${statusClass} text-muted`}
       >
         <div className="mb-2 flex items-center justify-between gap-3">
           <span className={`rounded border px-2 py-0.5 font-mono text-[10px] tracking-wider ${meta.cls}`}>{meta.label}</span>
           <span className="font-mono text-[10px] text-muted">{formatTime(message.timestamp)}</span>
         </div>
-        <div className="whitespace-pre-wrap leading-relaxed text-ink/90">{message.content}</div>
+        <div className="break-words whitespace-pre-wrap leading-relaxed text-ink/90">{message.content}</div>
         {message.status === "streaming" && (
           <div className="mt-2 flex items-center gap-1">
             <span className="h-1.5 w-1.5 animate-pulseDot rounded-full bg-amber" />

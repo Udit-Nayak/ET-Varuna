@@ -154,7 +154,7 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
           boxShadow: shouldFloat ? "0 18px 48px rgba(0,0,0,0.38)" : "0 0 0 rgba(0,0,0,0)",
         }}
         transition={{ duration: 0.26, ease: "easeOut" }}
-        className="mx-auto grid h-16 grid-cols-[auto_1fr_auto] items-center gap-4 overflow-visible border px-5 sm:px-6"
+        className="mx-auto grid h-16 grid-cols-[auto_1fr_auto] items-center gap-2 overflow-visible border px-3 sm:gap-4 sm:px-6"
       >
         <Link
           to="/dashboard"
@@ -165,7 +165,7 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
             <span className="absolute h-2.5 w-2.5 animate-pulseDot rounded-full bg-amber" />
             <span className="h-1.5 w-1.5 rounded-full bg-ink transition-colors group-hover:bg-amber" />
           </span>
-          <span className="font-display text-xl font-semibold tracking-tight text-ink">Varuna</span>
+          <span className="font-display text-lg font-semibold tracking-tight text-ink sm:text-xl">Varuna</span>
         </Link>
 
         <nav className="hidden min-w-0 justify-center md:flex" aria-label="Agent showcase navigation">
@@ -184,7 +184,7 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
           </div>
         </nav>
 
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-2 sm:gap-3">
           <button
             type="button"
             onClick={() => setChatOpen((value) => !value)}
@@ -214,7 +214,7 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
               {profile?.photoURL ? <img src={profile.photoURL} alt="" className="h-full w-full object-cover" /> : initials}
             </button>
             {open && (
-              <div className="absolute right-0 z-[80] mt-2 w-56 overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
+              <div className="absolute right-0 z-[80] mt-2 w-[min(14rem,calc(100vw-1rem))] overflow-hidden rounded-md border border-border bg-surface font-mono text-xs text-muted shadow-xl shadow-base/50">
                 <div className="border-b border-border px-3 py-2">
                   <div className="truncate text-ink">{displayName}</div>
                   <div className="truncate text-[11px]">{email}</div>
@@ -240,7 +240,7 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
       </motion.div>
 
       {chatOpen && (
-        <div className="fixed right-6 top-20 z-50 w-[min(30rem,calc(100vw-1.5rem))] rounded-md border border-amber/40 bg-surface/95 shadow-2xl shadow-base/70 backdrop-blur">
+        <div className="fixed inset-x-3 top-20 z-50 max-h-[calc(100dvh-6rem)] rounded-md border border-amber/40 bg-surface/95 shadow-2xl shadow-base/70 backdrop-blur sm:left-auto sm:right-6 sm:w-[min(30rem,calc(100vw-1.5rem))]">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-amber">AI assistant</div>
@@ -263,12 +263,12 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
             </div>
           </div>
 
-          <div ref={chatScrollRef} className="flex max-h-[28rem] min-h-64 flex-col gap-3 overflow-y-auto px-4 py-3 text-sm text-ink">
+          <div ref={chatScrollRef} className="flex max-h-[min(28rem,calc(100dvh-14rem))] min-h-56 flex-col gap-3 overflow-y-auto px-3 py-3 text-sm text-ink sm:min-h-64 sm:px-4">
             {chatMessages.length > 0 ? (
               chatMessages.map((message) => (
                 <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[82%] rounded-md border px-3 py-2 leading-6 shadow-sm ${
+                    className={`max-w-[88%] break-words rounded-md border px-3 py-2 leading-6 shadow-sm sm:max-w-[82%] ${
                       message.role === "user"
                         ? "border-amber/50 bg-amber text-base"
                         : message.status === "error"
@@ -291,7 +291,7 @@ const Navbar = ({ workspaceMode = true, onBrandClick }: NavbarProps) => {
           </div>
 
           <form onSubmit={handleAsk} className="border-t border-border p-3">
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 ref={chatInputRef}
                 value={query}

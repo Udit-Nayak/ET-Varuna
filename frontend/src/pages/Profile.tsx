@@ -58,26 +58,26 @@ const Profile = () => {
     <div className="min-h-screen bg-base text-ink">
       <Navbar />
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <section className="relative overflow-hidden rounded-[28px] border border-border/80 bg-surface/90 shadow-2xl shadow-base/30">
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8 lg:px-8">
+        <section className="relative overflow-hidden rounded-2xl border border-border/80 bg-surface/90 shadow-2xl shadow-base/30 sm:rounded-[28px]">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(232,163,61,0.14),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(94,201,255,0.1),transparent_26%),linear-gradient(135deg,rgba(255,255,255,0.02),transparent_35%)]" />
           <div className="absolute left-10 top-10 h-20 w-20 rounded-full bg-amber/10 blur-3xl" />
           <div className="absolute bottom-10 right-10 h-24 w-24 rounded-full bg-[#5EC9FF]/10 blur-3xl" />
 
           <div className="relative grid gap-0 lg:grid-cols-[360px_minmax(0,1fr)]">
-            <aside className="border-b border-border/80 p-6 sm:p-8 lg:border-b-0 lg:border-r">
-              <div className="flex items-start gap-4">
-                <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-amber/40 bg-gradient-to-br from-amber/20 via-surface to-[#5EC9FF]/10 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+            <aside className="border-b border-border/80 p-4 sm:p-8 lg:border-b-0 lg:border-r">
+              <div className="flex items-start gap-3 sm:gap-4">
+                <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-amber/40 bg-gradient-to-br from-amber/20 via-surface to-[#5EC9FF]/10 shadow-[0_20px_60px_rgba(0,0,0,0.28)] sm:h-20 sm:w-20">
                   <span className="absolute inset-0 rounded-full ring-1 ring-white/5" />
                   {profile?.photoURL ? (
                     <img src={profile.photoURL} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="font-display text-3xl font-semibold text-amber">{initials}</span>
+                    <span className="font-display text-2xl font-semibold text-amber sm:text-3xl">{initials}</span>
                   )}
                 </div>
                 <div className="min-w-0 pt-1">
                   <div className="font-mono text-[10px] uppercase tracking-[0.35em] text-amber">Operator Profile</div>
-                  <h1 className="mt-2 truncate font-display text-2xl font-semibold tracking-tight">
+                  <h1 className="mt-2 truncate font-display text-xl font-semibold tracking-tight sm:text-2xl">
                     {displayName || "Complete profile"}
                   </h1>
                   <p className="mt-1 truncate text-sm text-muted">{email}</p>
@@ -116,13 +116,13 @@ const Profile = () => {
               </button>
             </aside>
 
-            <section className="p-6 sm:p-8">
+            <section className="p-4 sm:p-8">
               <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-2xl">
                   <div className="font-mono text-[10px] uppercase tracking-[0.35em] text-amber">
                     {setupMode ? "Operator onboarding" : "Profile settings"}
                   </div>
-                  <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+                  <h2 className="mt-3 font-display text-2xl font-semibold tracking-tight sm:text-4xl">
                     {setupMode ? "Set up your operator identity." : "Refine your operator profile."}
                   </h2>
                   <p className="mt-3 max-w-xl text-sm leading-7 text-muted">

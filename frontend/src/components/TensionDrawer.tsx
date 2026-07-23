@@ -40,7 +40,7 @@ const TensionDrawer = ({ isDrawing, isEraseMode = false, onToggleEraseMode, onTo
   const [selectedPreset, setSelectedPreset] = useState<MaritimeRiskPreset | "">("");
 
   return (
-    <div className="pointer-events-auto absolute bottom-16 left-3 z-20 flex w-64 flex-col gap-2 font-mono text-xs text-muted">
+    <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-20 flex w-auto flex-col gap-2 font-mono text-xs text-muted sm:bottom-16 sm:right-auto sm:w-64">
       <button
         type="button"
         className="flex items-center justify-between rounded-md border border-border bg-surface/95 px-3 py-2.5 text-left text-ink shadow-lg backdrop-blur transition-colors hover:border-amber hover:text-amber"
@@ -52,7 +52,7 @@ const TensionDrawer = ({ isDrawing, isEraseMode = false, onToggleEraseMode, onTo
       </button>
 
       {isOpen && (
-        <div className="max-h-[58vh] overflow-y-auto rounded-md border border-border bg-surface/95 p-2.5 shadow-lg backdrop-blur">
+        <div className="max-h-[30dvh] overflow-y-auto rounded-md border border-border bg-surface/95 p-2.5 shadow-lg backdrop-blur sm:max-h-[58vh]">
           <button
             type="button"
             className={

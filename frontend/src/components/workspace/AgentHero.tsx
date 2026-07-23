@@ -200,8 +200,8 @@ const item: Variants = {
 
 const AgentHero = ({ onUseMe }: AgentHeroProps) => {
   return (
-    <section className="relative z-10 flex min-h-[calc(100vh-65px)] items-center justify-center px-6 py-16 text-center">
-      <div className="pointer-events-auto absolute right-4 top-6 z-30 w-[min(26rem,88vw)] text-left">
+    <section className="relative z-10 flex min-h-[calc(100dvh-65px)] items-center justify-center px-4 py-14 text-center sm:px-6 sm:py-16">
+      <div className="pointer-events-auto absolute right-4 top-6 z-30 hidden w-[min(26rem,88vw)] text-left lg:block">
         <GriaHoverNews />
       </div>
       <motion.div
@@ -220,28 +220,28 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
           <img
             src={varunaWordmark}
             alt="Varuna"
-            className="h-auto w-[min(72vw,44rem)] drop-shadow-[0_18px_30px_rgba(0,0,0,0.72)]"
+          className="h-auto w-[min(84vw,44rem)] drop-shadow-[0_18px_30px_rgba(0,0,0,0.72)] sm:w-[min(72vw,44rem)]"
           />
         </motion.h1>
         <motion.h6
           variants={item}
-          className="mt-5 max-w-4xl font-body text-2xl font-medium leading-tight text-ink/85 drop-shadow-[0_2px_18px_rgba(0,0,0,0.85)] md:text-3xl"
+          className="mt-5 max-w-4xl font-body text-xl font-medium leading-tight text-ink/90 drop-shadow-[0_2px_18px_rgba(0,0,0,0.85)] sm:text-2xl md:text-3xl"
         >
           From risk signal to executable action in real time
         </motion.h6>
         
 
-        <motion.div variants={item} className="mt-9 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <motion.div variants={item} className="mt-8 grid w-full grid-cols-1 gap-3 sm:mt-9 sm:grid-cols-2 lg:grid-cols-5">
           {showcaseAgents.map((agent) => (
             <div
               key={agent.code}
-              className="hero-agent-card group relative flex min-h-[4.5rem] items-start gap-3 rounded-md border border-border/80 px-4 py-3.5 text-left shadow-lg shadow-base/45 backdrop-blur-md transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-[#121924]/88 hover:shadow-2xl hover:shadow-amber/10"
+              className="hero-agent-card group relative flex min-h-[4rem] items-start gap-3 rounded-md border border-border/80 px-3.5 py-3 text-left shadow-lg shadow-base/45 backdrop-blur-md transition-all duration-200 hover:-translate-y-1 hover:border-amber/70 hover:bg-[#121924]/88 hover:shadow-2xl hover:shadow-amber/10 sm:min-h-[4.5rem] sm:px-4 sm:py-3.5"
             >
               <span className="mt-0.5 shrink-0 rounded border border-amber/50 px-2 py-1 font-mono text-[10px] font-semibold tracking-wider text-amber transition-colors duration-200 group-hover:bg-amber group-hover:text-base">
                 {agent.code}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="line-clamp-2 font-display text-sm font-semibold leading-snug text-ink transition-colors duration-200 group-hover:text-white">
+                <div className="line-clamp-2 break-words font-display text-sm font-semibold leading-snug text-ink transition-colors duration-200 group-hover:text-white">
                   {agent.name}
                 </div>
               </div>
@@ -253,7 +253,7 @@ const AgentHero = ({ onUseMe }: AgentHeroProps) => {
           variants={item}
           type="button"
           onClick={onUseMe}
-          className="mt-10 rounded-md bg-amber px-7 py-3 font-mono text-sm font-semibold uppercase tracking-wider text-base transition-transform hover:scale-[1.02]"
+          className="mt-9 rounded-md bg-amber px-6 py-3 font-mono text-xs font-semibold uppercase tracking-wider text-base transition-transform hover:scale-[1.02] sm:mt-10 sm:px-7 sm:text-sm"
         >
           Open Workspace
         </motion.button>

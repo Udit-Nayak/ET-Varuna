@@ -16,6 +16,7 @@ import { useVesselStream } from "../hooks/useVesselStream";
 import { pointInPolygon } from "../utils/geo";
 
 const NAV_HEIGHT = 65;
+const STACKED_WORKSPACE_QUERY = "(max-width: 1023px)";
 
 const workflowApoRoutes = (workflow: Record<string, any> | null): ApoRouteMapOption[] => {
   const options = workflow?.apo?.ranked_options;
@@ -78,10 +79,12 @@ const Dashboard = () => {
   const [mapPaneWidth, setMapPaneWidth] = useState(0);
   const [chatPaneWidth, setChatPaneWidth] = useState(0);
   const [isEraseMode, setIsEraseMode] = useState(false);
+  const [isStackedViewport, setIsStackedViewport] = useState(false);
 
   const isWorkspace = phase === "workspace";
-  const mapCompact = isWorkspace && (split.ratio < 30 || mapPaneWidth < 420);
-  const chatCompact = isWorkspace && (100 - split.ratio < 30 || chatPaneWidth < 360);
+  const stackedWorkspace = isWorkspace && isStackedViewport;
+  const mapCompact = isWorkspace && (stackedWorkspace || split.ratio < 30 || mapPaneWidth < 420);
+  const chatCompact = isWorkspace && (stackedWorkspace || 100 - split.ratio < 30 || chatPaneWidth < 360);
   const impact = useMemo(() => computeImpact(), [computeImpact]);
   const affectedVessels = useMemo(
     () => vessels.filter((vessel) => zones.some((zone) => pointInPolygon([vessel.lon, vessel.lat], zone.polygon))).map((vessel) => vessel.mmsi),
@@ -100,7 +103,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (!isWorkspace || split.isDragging) return;
     requestMapResize();
-  }, [isWorkspace, requestMapResize, split.isDragging, split.ratio]);
+  }, [isWorkspace, requestMapResize, split.isDragging, split.ratio, stackedWorkspace]);
 
   useEffect(
     () => () => {
@@ -114,13 +117,21 @@ const Dashboard = () => {
 
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
-      setMapPaneWidth((width * split.ratio) / 100);
-      setChatPaneWidth((width * (100 - split.ratio)) / 100);
+      setMapPaneWidth(stackedWorkspace ? width : (width * split.ratio) / 100);
+      setChatPaneWidth(stackedWorkspace ? width : (width * (100 - split.ratio)) / 100);
     });
 
     observer.observe(workspaceRef.current);
     return () => observer.disconnect();
-  }, [split.ratio]);
+  }, [split.ratio, stackedWorkspace]);
+
+  useEffect(() => {
+    const media = window.matchMedia(STACKED_WORKSPACE_QUERY);
+    const update = () => setIsStackedViewport(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -220,15 +231,33 @@ const Dashboard = () => {
   );
 
   const mapTarget = isWorkspace
-    ? {
-        left: "0%",
-        width: `${split.ratio}%`,
-        opacity: 1,
-      }
+    ? stackedWorkspace
+      ? {
+          left: "0%",
+          width: "100%",
+          opacity: 1,
+        }
+      : {
+          left: "0%",
+          width: `${split.ratio}%`,
+          opacity: 1,
+        }
     : {
         left: "0%",
         width: "100%",
         opacity: showcaseProgress > 0 ? 0.78 : 0.68,
+      };
+
+  const mapFrameStyle = isWorkspace
+    ? {
+        top: NAV_HEIGHT,
+        bottom: stackedWorkspace ? "auto" : 0,
+        height: stackedWorkspace ? "42dvh" : "auto",
+      }
+    : {
+        top: 0,
+        bottom: 0,
+        height: "auto",
       };
 
   return (
@@ -237,7 +266,7 @@ const Dashboard = () => {
 
       <motion.div
         className={`fixed ${isWorkspace ? "z-20 pointer-events-auto" : "z-0 pointer-events-none"}`}
-        style={{ top: isWorkspace ? NAV_HEIGHT : 0, bottom: 0 }}
+        style={mapFrameStyle}
         animate={mapTarget}
         transition={{ duration: 0.55, ease: "easeInOut" }}
         onAnimationComplete={requestMapResize}
@@ -299,6 +328,7 @@ const Dashboard = () => {
             ratio={split.ratio}
             isDragging={split.isDragging}
             onDividerPointerDown={split.onPointerDown}
+            stackedLayout={stackedWorkspace}
             chatCompact={chatCompact}
             messages={chat.messages}
             latestWorkflow={chat.latestWorkflow}
